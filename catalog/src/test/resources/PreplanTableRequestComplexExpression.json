@@ -1,0 +1,4 @@
+{
+  "select" : [ "col1", "col2" ],
+  "filter" : "{\"type\":\"and\",\"left\":{\"type\":\"eq\",\"term\":\"col1\",\"value\":\"A\"},\"right\":{\"type\":\"gt\",\"term\":\"col2\",\"value\":2}}"
+}
