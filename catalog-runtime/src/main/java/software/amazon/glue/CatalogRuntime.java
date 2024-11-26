@@ -12,19 +12,6 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+package software.amazon.glue;
 
-rootProject.name = 'glue-extensions-for-iceberg'
-
-include 'catalog'
-include 'catalog-runtime'
-include 'spark'
-include 'spark-runtime'
-
-
-project(':catalog').name = 'glue-catalog-extensions-for-iceberg'
-project(':catalog-runtime').name = 'glue-catalog-extensions-for-iceberg-runtime'
-project(':spark').name = 'glue-extensions-for-iceberg-spark-3.5_2.12'
-project(':spark-runtime').name = 'glue-extensions-for-iceberg-spark-runtime-3.5_2.12'
-
-
-
+public class CatalogRuntime {}

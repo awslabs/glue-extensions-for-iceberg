@@ -14,7 +14,8 @@
  */
 
 apply plugin: 'scala'
-apply plugin: 'io.github.goooler.shadow'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
 
 dependencies {
     compileOnly project(':glue-catalog-extensions-for-iceberg')
@@ -38,28 +39,49 @@ dependencies {
     compileOnly "org.apache.spark:spark-hive_${scalaVersion}:${sparkVersion}"
 }
 
-shadowJar {
-    relocate 'com.google.errorprone', 'org.apache.iceberg.shaded.com.google.errorprone'
-    relocate 'com.google.flatbuffers', 'org.apache.iceberg.shaded.com.google.flatbuffers'
-    relocate 'com.fasterxml', 'org.apache.iceberg.shaded.com.fasterxml'
-    relocate 'com.github.benmanes', 'org.apache.iceberg.shaded.com.github.benmanes'
-    relocate 'org.checkerframework', 'org.apache.iceberg.shaded.org.checkerframework'
-    relocate 'org.apache.avro', 'org.apache.iceberg.shaded.org.apache.avro'
-    relocate 'avro.shaded', 'org.apache.iceberg.shaded.org.apache.avro.shaded'
-    relocate 'com.thoughtworks.paranamer', 'org.apache.iceberg.shaded.com.thoughtworks.paranamer'
-    relocate 'org.apache.parquet', 'org.apache.iceberg.shaded.org.apache.parquet'
-    relocate 'shaded.parquet', 'org.apache.iceberg.shaded.org.apache.parquet.shaded'
-    relocate 'org.apache.orc', 'org.apache.iceberg.shaded.org.apache.orc'
-    relocate 'io.airlift', 'org.apache.iceberg.shaded.io.airlift'
-    relocate 'org.apache.hc.client5', 'org.apache.iceberg.shaded.org.apache.hc.client5'
-    relocate 'org.apache.hc.core5', 'org.apache.iceberg.shaded.org.apache.hc.core5'
-    relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
-    relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
-    relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
-    relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
-    relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
 
-    archiveClassifier.set("runtime")
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            pom {
+                name = 'glue-extensions-for-iceberg-spark-3.5_2.12'
+                description = 'AWS Glue Extensions for Apache Iceberg usage on Spark 3.5 Scala 2.12'
+                url = 'https://github.com/awslabs/glue-extensions-for-iceberg'
+                inceptionYear = '2024'
+                scm{
+                    url = 'https://github.com/awslabs/glue-extensions-for-iceberg/tree/main'
+                    connection = 'scm:git:ssh://git@github.com/awslabs/glue-extensions-for-iceberg.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/awslabs/glue-extensions-for-iceberg.git'
+                }
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'awslabs'
+                        name = 'AWS Open Data Analytics Data Lake Team'
+                        email = 'oda-datalake@amazon.com'
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven{
+            url = 'https://aws.oss.sonatype.org/service/local/staging/deploy/maven2/'
+            credentials(PasswordCredentials)
+        }
+    }
 }
 
-tasks.build.dependsOn tasks.shadowJar
+signing {
+    sign publishing.publications.maven
+}
