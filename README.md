@@ -22,7 +22,7 @@ This package contains AWS Glue extensions for use with Apache Iceberg.
 Here are the instructions to start using the library on Apache Spark against Glue catalog `123456789012:rmscatalog/rmsdatabase`.
 For more details and explanations about the configurations used, see later sections of the doc.
 
-### On Amazon EMR after 7.5
+### On Amazon EMR Starting 7.5
 
 Enable Iceberg Spark cluster using instructions [here](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-iceberg-use-spark-cluster.html#emr-iceberg-create-cluster), 
 and launch Spark session with:
@@ -67,23 +67,41 @@ that leverages the AWS Glue Extensions APIs.
 
 ### Importing the library
 
+If you are working on library integration with it, use:
+
 ```groovy
 dependencies {
     implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg:0.1.0"
 }
 ```
 
-## Apache Spark Integration
-
-The `spark` folder contains code for Maven library `glue-extensions-for-iceberg-spark`.
-
-### Importing the library
-
-It is recommended to use the runtime version of the library as a provided dependency:
+If you are working on engine integration, you might need to use the shaded runtime jar.
+It provides the same class path shading as the ones used in Iceberg engine runtime jars:
 
 ```groovy
 dependencies {
-    compileOnly "software.amazon.glue:glue-extensions-for-iceberg-spark:0.1.0:runtime"
+    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg-runtime:0.1.0"
+}
+```
+
+## Apache Spark Integration
+
+The `spark` folder contains code for Maven library `glue-extensions-for-iceberg-spark-3.5_2.12`.
+
+### Importing the library
+
+It is recommended to use the runtime version of the library as a dependency,
+which provides the same class path shading as the ones used in Iceberg engine runtime jars:
+
+```groovy
+// without shading
+dependencies {
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-3.5_2.12:0.1.0"
+}
+
+// with shading
+dependencies {
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0"
 }
 ```
 
@@ -91,7 +109,7 @@ You can also directly use it in your Spark application using:
 
 ```shell
 spark-sql \
- --packages software.amazon.glue:glue-extensions-for-iceberg-spark:0.1.0:runtime \
+ --packages software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0 \
  --conf ...
 ```
 

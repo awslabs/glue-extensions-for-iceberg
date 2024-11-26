@@ -14,6 +14,8 @@
  */
 
 apply plugin: 'org.openapi.generator'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
 
 dependencies {
     annotationProcessor "org.immutables:value:${immutableVersion}"
@@ -70,6 +72,52 @@ dependencies {
 
 openApiValidate {
     inputSpec.set("$rootDir/glue-extensions-api.yaml")
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            pom {
+                name = 'glue-catalog-extensions-for-iceberg'
+                description = 'AWS Glue Catalog Extensions for Apache Iceberg'
+                url = 'https://github.com/awslabs/glue-extensions-for-iceberg'
+                inceptionYear = '2024'
+                scm{
+                    url = 'https://github.com/awslabs/glue-extensions-for-iceberg/tree/main'
+                    connection = 'scm:git:ssh://git@github.com/awslabs/glue-extensions-for-iceberg.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/awslabs/glue-extensions-for-iceberg.git'
+                }
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'awslabs'
+                        name = 'AWS Open Data Analytics Data Lake Team'
+                        email = 'oda-datalake@amazon.com'
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            url = 'https://aws.oss.sonatype.org/service/local/staging/deploy/maven2/'
+            credentials(PasswordCredentials)
+        }
+    }
+}
+
+signing {
+    sign publishing.publications.maven
 }
 
 tasks.compileJava.dependsOn tasks.openApiValidate
