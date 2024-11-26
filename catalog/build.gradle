@@ -1,0 +1,75 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ *
+ *  http://aws.amazon.com/apache2.0
+ *
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
+apply plugin: 'org.openapi.generator'
+
+dependencies {
+    annotationProcessor "org.immutables:value:${immutableVersion}"
+    compileOnly "org.immutables:value:${immutableVersion}"
+    compileOnly "com.google.code.findbugs:jsr305:${findbugVersion}"
+    compileOnly "org.apache.iceberg:iceberg-aws:${icebergVersion}"
+    compileOnly "org.apache.avro:avro:${avroVersion}"
+    compileOnly "org.apache.iceberg:iceberg-api:${icebergVersion}"
+    compileOnly "org.apache.iceberg:iceberg-bundled-guava:${icebergVersion}"
+    compileOnly "org.apache.iceberg:iceberg-core:${icebergVersion}"
+    compileOnly "org.apache.iceberg:iceberg-common:${icebergVersion}"
+    compileOnly "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
+    compileOnly "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+    compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"
+    compileOnly "org.apache.httpcomponents.client5:httpclient5:${http5Version}"
+    compileOnly "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+    compileOnly "software.amazon.awssdk:auth:${awsV2Version}"
+    compileOnly "software.amazon.awssdk:utils:${awsV2Version}"
+    compileOnly "software.amazon.awssdk:s3:${awsV2Version}"
+    compileOnly "software.amazon.awssdk:glue:${awsV2Version}"
+
+    testImplementation "org.apache.hadoop:hadoop-client:${hadoopVersion}"
+    testImplementation "org.apache.httpcomponents.client5:httpclient5:${http5Version}"
+    testImplementation "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
+    testImplementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+    testImplementation "org.apache.iceberg:iceberg-bundled-guava:${icebergVersion}"
+    testImplementation "org.apache.iceberg:iceberg-api:${icebergVersion}"
+    testImplementation "org.apache.iceberg:iceberg-api:${icebergVersion}:tests"
+    testImplementation "org.apache.iceberg:iceberg-core:${icebergVersion}"
+    testImplementation "org.apache.iceberg:iceberg-core:${icebergVersion}:tests"
+    testImplementation "org.apache.iceberg:iceberg-aws:${icebergVersion}"
+    testImplementation "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+    testImplementation "software.amazon.awssdk:auth:${awsV2Version}"
+    testImplementation "software.amazon.awssdk:utils:${awsV2Version}"
+    testImplementation "software.amazon.awssdk:s3:${awsV2Version}"
+    testImplementation "software.amazon.awssdk:glue:${awsV2Version}"
+    testImplementation "org.assertj:assertj-core:${assertjVersion}"
+    testImplementation "org.awaitility:awaitility:${awaitilityVersion}"
+    testImplementation "org.eclipse.jetty:jetty-server:${jettyVersion}"
+    testImplementation "org.eclipse.jetty:jetty-servlet:${jettyVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter-engine:${junitVersion}"
+    testImplementation "org.junit.vintage:junit-vintage-engine:${junitVersion}"
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testImplementation "org.mockito:mockito-inline:${mockitoVersion}"
+    testImplementation "org.mockito:mockito-junit-jupiter:${mockitoVersion}"
+    testImplementation "org.mock-server:mockserver-client-java:${mockServerVersion}"
+    testImplementation "org.mock-server:mockserver-netty:${mockServerVersion}"
+    testImplementation "org.apache.iceberg:iceberg-aws:${icebergVersion}"
+    testImplementation "org.apache.iceberg:iceberg-api:${icebergVersion}"
+    testImplementation "org.apache.iceberg:iceberg-aws-bundle:${icebergVersion}"
+    testImplementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4jVersion}"
+}
+
+openApiValidate {
+    inputSpec.set("$rootDir/glue-extensions-api.yaml")
+}
+
+tasks.compileJava.dependsOn tasks.openApiValidate
