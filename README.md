@@ -24,12 +24,12 @@ For more details and explanations about the configurations used, see later secti
 
 ### On Amazon EMR Starting 7.5
 
+Amazon EMR Spark starting 7.5 automatically installs this extensions package.
 Enable Iceberg Spark cluster using instructions [here](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-iceberg-use-spark-cluster.html#emr-iceberg-create-cluster), 
 and launch Spark session with:
 
 ```shell
 spark-sql \
- --packages software.amazon.glue:glue-extensions-for-iceberg-spark:0.1.0:runtime \
  --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog \
  --conf spark.sql.catalog.my_catalog.type=glue \
  --conf spark.sql.catalog.my_catalog.glue.id=123456789012:rmscatalog/rmsdatabase \
@@ -41,7 +41,7 @@ spark-sql \
 
 ```shell
 spark-sql \
- --packages org.apache.icebergsoftware.amazon.glue:glue-extensions-for-iceberg-spark:0.1.0:runtime \
+ --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0 \
  --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog \
  --conf spark.sql.catalog.my_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog \
  --conf spark.sql.catalog.my_catalog.glue.id=123456789012:rmscatalog/rmsdatabase \
@@ -51,6 +51,8 @@ spark-sql \
  --conf spark.hadoop.fs.s3a.credentials.resolver=software.amazon.glue.GlueTableCredentialsResolver \
  --conf spark.hadoop.glue.id=123456789012:rmscatalog/rmsdatabase
 ```
+
+Note: this command assumes that you have AWS SDK V1 and V2 are on your class path.
 
 ## AWS Glue Extensions API
 
