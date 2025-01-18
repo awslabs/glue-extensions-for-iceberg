@@ -13,7 +13,7 @@
  * permissions and limitations under the License.
  */
 
-package software.amazon.glue.s3a.util;
+package software.amazon.glue.s3a.adaptor;
 
 import com.amazonaws.auth.AccountIdAware;
 import com.amazonaws.auth.AWSCredentials;

@@ -36,7 +36,7 @@ import software.amazon.glue.responses.LoadTableResponse;
 import software.amazon.glue.s3a.resolver.S3Call;
 import software.amazon.glue.s3a.resolver.S3CredentialsResolver;
 import software.amazon.glue.s3a.resolver.S3Resource;
-import software.amazon.glue.s3a.util.V1V2AwsCredentialProviderAdapter;
+import software.amazon.glue.s3a.adaptor.V1V2AwsCredentialProviderAdapter;
 
 public class GlueTableCredentialsResolver implements S3CredentialsResolver {
 
