@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.statistics;
 
 import java.time.Duration;
-
 import software.amazon.glue.s3a.Statistic;
 import org.apache.hadoop.fs.statistics.DurationTrackerFactory;
 

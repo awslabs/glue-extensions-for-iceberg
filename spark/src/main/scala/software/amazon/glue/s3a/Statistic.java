@@ -15,21 +15,20 @@
 
 package software.amazon.glue.s3a;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.fs.audit.AuditStatisticNames;
-import software.amazon.glue.s3a.statistics.StatisticTypeEnum;
-import org.apache.hadoop.fs.statistics.FileSystemStatisticNames;
-import org.apache.hadoop.fs.statistics.StoreStatisticNames;
-import org.apache.hadoop.fs.statistics.StreamStatisticNames;
-
 import static software.amazon.glue.s3a.statistics.StatisticTypeEnum.TYPE_COUNTER;
 import static software.amazon.glue.s3a.statistics.StatisticTypeEnum.TYPE_DURATION;
 import static software.amazon.glue.s3a.statistics.StatisticTypeEnum.TYPE_GAUGE;
 import static software.amazon.glue.s3a.statistics.StatisticTypeEnum.TYPE_QUANTILE;
 import static org.apache.hadoop.fs.statistics.StoreStatisticNames.SUFFIX_FAILURES;
+
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.audit.AuditStatisticNames;
+import software.amazon.glue.s3a.S3AFileSystem;
+import software.amazon.glue.s3a.statistics.StatisticTypeEnum;
+import org.apache.hadoop.fs.statistics.StoreStatisticNames;
+import org.apache.hadoop.fs.statistics.StreamStatisticNames;
 
 /**
  * Statistic which are collected in S3A.
@@ -53,58 +52,12 @@ public enum Statistic {
       StoreStatisticNames.ACTION_HTTP_HEAD_REQUEST,
       "HEAD request.",
       TYPE_DURATION),
-  ACTION_FILE_OPENED(
-      StoreStatisticNames.ACTION_FILE_OPENED,
-      "File opened.",
-      TYPE_DURATION),
   ACTION_HTTP_GET_REQUEST(
       StoreStatisticNames.ACTION_HTTP_GET_REQUEST,
       "GET request.",
       TYPE_DURATION),
 
-  /* Http error responses */
-  HTTP_RESPONSE_400(
-      StoreStatisticNames.HTTP_RESPONSE_400,
-      "400 response.",
-      TYPE_COUNTER),
-
-  HTTP_RESPONSE_429(
-      StoreStatisticNames.HTTP_RESPONSE_429,
-      "429 response.",
-      TYPE_COUNTER),
-
-  HTTP_RESPONSE_4XX(
-      StoreStatisticNames.HTTP_RESPONSE_4XX,
-      "4XX response.",
-      TYPE_COUNTER),
-
-  HTTP_RESPONSE_500(
-      StoreStatisticNames.HTTP_RESPONSE_500,
-      "500 response.",
-      TYPE_COUNTER),
-
-  HTTP_RESPONSE_503(
-      StoreStatisticNames.HTTP_RESPONSE_503,
-      "503 response.",
-      TYPE_COUNTER),
-
-  HTTP_RESPONSE_5XX(
-      StoreStatisticNames.HTTP_RESPONSE_5XX,
-      "5XX response.",
-      TYPE_COUNTER),
-
-
   /* FileSystem Level statistics */
-
-  FILESYSTEM_INITIALIZATION(
-      FileSystemStatisticNames.FILESYSTEM_INITIALIZATION,
-      "Filesystem initialization",
-      TYPE_DURATION),
-  FILESYSTEM_CLOSE(
-      FileSystemStatisticNames.FILESYSTEM_CLOSE,
-      "Filesystem close",
-      TYPE_DURATION),
-
   DIRECTORIES_CREATED("directories_created",
       "Total number of directories created through the object store.",
       TYPE_COUNTER),
@@ -143,10 +96,6 @@ public enum Statistic {
       StoreStatisticNames.OP_ACCESS,
       "Calls of access()",
       TYPE_DURATION),
-  INVOCATION_BULK_DELETE(
-      StoreStatisticNames.OP_BULK_DELETE,
-      "Calls of bulk delete()",
-      TYPE_COUNTER),
   INVOCATION_COPY_FROM_LOCAL_FILE(
       StoreStatisticNames.OP_COPY_FROM_LOCAL_FILE,
       "Calls of copyFromLocalFile()",
@@ -154,10 +103,6 @@ public enum Statistic {
   INVOCATION_CREATE(
       StoreStatisticNames.OP_CREATE,
       "Calls of create()",
-      TYPE_DURATION),
-  INVOCATION_CREATE_FILE(
-      StoreStatisticNames.OP_CREATE_FILE,
-      "Calls of createFile()",
       TYPE_DURATION),
   INVOCATION_CREATE_NON_RECURSIVE(
       StoreStatisticNames.OP_CREATE_NON_RECURSIVE,
@@ -227,10 +172,6 @@ public enum Statistic {
       StoreStatisticNames.OP_OPEN,
       "Calls of open()",
       TYPE_COUNTER),
-  INVOCATION_OPENFILE(
-      StoreStatisticNames.OP_OPENFILE,
-      "Calls of openFile()",
-      TYPE_COUNTER),
   INVOCATION_RENAME(
       StoreStatisticNames.OP_RENAME,
       "Calls of rename()",
@@ -286,10 +227,7 @@ public enum Statistic {
       StoreStatisticNames.OBJECT_MULTIPART_UPLOAD_ABORTED,
       "Object multipart upload aborted",
       TYPE_DURATION),
-  OBJECT_MULTIPART_UPLOAD_LIST(
-      StoreStatisticNames.OBJECT_MULTIPART_UPLOAD_LIST,
-      "Object multipart list request issued",
-      TYPE_DURATION),  OBJECT_PUT_REQUESTS(
+  OBJECT_PUT_REQUESTS(
       StoreStatisticNames.OBJECT_PUT_REQUEST,
       "Object put/multipart upload count",
       TYPE_DURATION),
@@ -309,6 +247,10 @@ public enum Statistic {
       StoreStatisticNames.OBJECT_PUT_BYTES_PENDING,
       "number of bytes queued for upload/being actively uploaded",
       TYPE_GAUGE),
+  OBJECT_SELECT_REQUESTS(
+      StoreStatisticNames.OBJECT_SELECT_REQUESTS,
+      "Count of S3 Select requests issued",
+      TYPE_COUNTER),
   STREAM_READ_ABORTED(
       StreamStatisticNames.STREAM_READ_ABORTED,
       "Count of times the TCP stream was aborted",
@@ -351,32 +293,6 @@ public enum Statistic {
       StreamStatisticNames.STREAM_READ_OPERATIONS,
       "Count of read() operations in an input stream",
       TYPE_COUNTER),
-  STREAM_READ_VECTORED_OPERATIONS(
-          StreamStatisticNames.STREAM_READ_VECTORED_OPERATIONS,
-          "Count of readVectored() operations in an input stream.",
-          TYPE_COUNTER),
-  STREAM_READ_VECTORED_READ_BYTES_DISCARDED(
-          StreamStatisticNames.STREAM_READ_VECTORED_READ_BYTES_DISCARDED,
-          "Count of bytes discarded during readVectored() operation." +
-                  " in an input stream",
-          TYPE_COUNTER),
-  STREAM_READ_VECTORED_INCOMING_RANGES(
-          StreamStatisticNames.STREAM_READ_VECTORED_INCOMING_RANGES,
-          "Count of incoming file ranges during readVectored() operation.",
-          TYPE_COUNTER),
-  STREAM_READ_VECTORED_COMBINED_RANGES(
-          StreamStatisticNames.STREAM_READ_VECTORED_COMBINED_RANGES,
-          "Count of combined file ranges during readVectored() operation.",
-          TYPE_COUNTER),
-  STREAM_READ_REMOTE_STREAM_ABORTED(
-      StreamStatisticNames.STREAM_READ_REMOTE_STREAM_ABORTED,
-      "Duration of aborting a remote stream during stream IO",
-      TYPE_DURATION),
-  STREAM_READ_REMOTE_STREAM_CLOSED(
-      StreamStatisticNames.STREAM_READ_REMOTE_STREAM_DRAINED,
-      "Duration of closing a remote stream during stream IO",
-      TYPE_DURATION),
-
   STREAM_READ_OPERATIONS_INCOMPLETE(
       StreamStatisticNames.STREAM_READ_OPERATIONS_INCOMPLETE,
       "Count of incomplete read() operations in an input stream",
@@ -421,22 +337,6 @@ public enum Statistic {
       StreamStatisticNames.STREAM_READ_TOTAL_BYTES,
       "Total count of bytes read from an input stream",
       TYPE_COUNTER),
-  STREAM_READ_UNBUFFERED(
-      StreamStatisticNames.STREAM_READ_UNBUFFERED,
-      "Total count of input stream unbuffering operations",
-      TYPE_COUNTER),
-  STREAM_READ_BLOCKS_IN_FILE_CACHE(
-      StreamStatisticNames.STREAM_READ_BLOCKS_IN_FILE_CACHE,
-      "Gauge of blocks in disk cache",
-      TYPE_GAUGE),
-  STREAM_READ_ACTIVE_PREFETCH_OPERATIONS(
-      StreamStatisticNames.STREAM_READ_ACTIVE_PREFETCH_OPERATIONS,
-      "Gauge of active prefetches",
-      TYPE_GAUGE),
-  STREAM_READ_ACTIVE_MEMORY_IN_USE(
-      StreamStatisticNames.STREAM_READ_ACTIVE_MEMORY_IN_USE,
-      "Gauge of active memory in use",
-      TYPE_GAUGE),
 
   /* Stream Write statistics */
 
@@ -490,16 +390,6 @@ public enum Statistic {
       "Total queue duration of all block uploads",
       TYPE_DURATION),
 
-  /* Stream prefetch file cache eviction */
-  STREAM_EVICT_BLOCKS_FROM_FILE_CACHE(
-      StreamStatisticNames.STREAM_EVICT_BLOCKS_FROM_FILE_CACHE,
-      "Count of blocks evicted from the disk cache",
-      TYPE_COUNTER),
-  STREAM_FILE_CACHE_EVICTION(
-      StreamStatisticNames.STREAM_FILE_CACHE_EVICTION,
-      "Duration of the eviction of an element from LRU cache that holds disk cache blocks",
-      TYPE_DURATION),
-
   /* committer stats */
   COMMITTER_COMMITS_CREATED(
       "committer_commits_created",
@@ -549,19 +439,10 @@ public enum Statistic {
       "committer_commits_reverted",
       "Count of commits reverted",
       TYPE_COUNTER),
-  COMMITTER_LOAD_SINGLE_PENDING_FILE(
-      "committer_load_single_pending_file",
-      "Duration to load a single pending file in task commit",
-      TYPE_DURATION),
   COMMITTER_MAGIC_FILES_CREATED(
       "committer_magic_files_created",
       "Count of files created under 'magic' paths",
       TYPE_COUNTER),
-
-  COMMITTER_MAGIC_MARKER_PUT(
-      "committer_magic_marker_put",
-      "Duration Tracking of marker files created under 'magic' paths",
-      TYPE_DURATION),
   COMMITTER_MATERIALIZE_FILE(
       "committer_materialize_file",
       "Duration Tracking of time to materialize a file in job commit",
@@ -571,12 +452,48 @@ public enum Statistic {
       "Duration Tracking of files uploaded from a local staging path",
       TYPE_DURATION),
 
-  /* General Store operations */
-  STORE_CLIENT_CREATION(
-      StoreStatisticNames.STORE_CLIENT_CREATION,
-      "Store Client Creation",
-      TYPE_DURATION),
+  /* S3guard stats */
+  S3GUARD_METADATASTORE_PUT_PATH_REQUEST(
+      "s3guard_metadatastore_put_path_request",
+      "S3Guard metadata store put one metadata path request",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_PUT_PATH_LATENCY(
+      "s3guard_metadatastore_put_path_latency",
+      "S3Guard metadata store put one metadata path latency",
+      TYPE_QUANTILE),
+  S3GUARD_METADATASTORE_INITIALIZATION(
+      "s3guard_metadatastore_initialization",
+      "S3Guard metadata store initialization times",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_RECORD_DELETES(
+      "s3guard_metadatastore_record_deletes",
+      "S3Guard metadata store records deleted",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_RECORD_READS(
+      "s3guard_metadatastore_record_reads",
+      "S3Guard metadata store records read",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_RECORD_WRITES(
+      "s3guard_metadatastore_record_writes",
+      "S3Guard metadata store records written",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_RETRY("s3guard_metadatastore_retry",
+      "S3Guard metadata store retry events",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_THROTTLED("s3guard_metadatastore_throttled",
+      "S3Guard metadata store throttled events",
+      TYPE_COUNTER),
+  S3GUARD_METADATASTORE_THROTTLE_RATE(
+      "s3guard_metadatastore_throttle_rate",
+      "S3Guard metadata store throttle rate",
+      TYPE_QUANTILE),
+  S3GUARD_METADATASTORE_AUTHORITATIVE_DIRECTORIES_UPDATED(
+      "s3guard_metadatastore_authoritative_directories_updated",
+      "S3Guard metadata store authoritative directories updated from S3",
+      TYPE_COUNTER),
 
+
+  /* General Store operations */
   STORE_EXISTS_PROBE(StoreStatisticNames.STORE_EXISTS_PROBE,
       "Store Existence Probe",
       TYPE_DURATION),
@@ -587,10 +504,6 @@ public enum Statistic {
   STORE_IO_RETRY(StoreStatisticNames.STORE_IO_RETRY,
       "retried requests made of the remote store",
       TYPE_COUNTER),
-
-  STORE_IO_RATE_LIMITED(StoreStatisticNames.STORE_IO_RATE_LIMITED_DURATION,
-      "Duration of rate limited operations",
-      TYPE_DURATION),
 
   STORE_IO_THROTTLED(
       StoreStatisticNames.STORE_IO_THROTTLED,
@@ -629,7 +542,7 @@ public enum Statistic {
       TYPE_COUNTER),
   MULTIPART_UPLOAD_ABORT_UNDER_PATH_INVOKED(
       StoreStatisticNames.MULTIPART_UPLOAD_ABORT_UNDER_PATH_INVOKED,
-      "Multipart Upload Abort Under Path Invoked",
+      "Multipart Upload Abort Unner Path Invoked",
       TYPE_COUNTER),
   MULTIPART_UPLOAD_COMPLETED(
       StoreStatisticNames.MULTIPART_UPLOAD_COMPLETED,

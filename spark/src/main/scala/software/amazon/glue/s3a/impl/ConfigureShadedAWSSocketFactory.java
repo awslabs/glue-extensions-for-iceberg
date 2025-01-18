@@ -15,12 +15,11 @@
 
 package software.amazon.glue.s3a.impl;
 
-import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import software.amazon.awssdk.http.apache.ApacheHttpClient;
-
-import javax.net.ssl.HostnameVerifier;
+import com.amazonaws.ClientConfiguration;
+import com.amazonaws.thirdparty.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import java.io.IOException;
+import javax.net.ssl.HostnameVerifier;
+import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 
 /**
  * This interacts with the Shaded httpclient library used in the full
@@ -31,12 +30,13 @@ public class ConfigureShadedAWSSocketFactory implements
     NetworkBinding.ConfigureAWSSocketFactory {
 
   @Override
-  public void configureSocketFactory(final ApacheHttpClient.Builder httpClientBuilder,
+  public void configureSocketFactory(final ClientConfiguration awsConf,
       final DelegatingSSLSocketFactory.SSLChannelMode channelMode)
       throws IOException {
     DelegatingSSLSocketFactory.initializeDefaultFactory(channelMode);
-    httpClientBuilder.socketFactory(new SSLConnectionSocketFactory(
-        DelegatingSSLSocketFactory.getDefaultFactory(),
-        (HostnameVerifier) null));
+    awsConf.getApacheHttpClientConfig().setSslSocketFactory(
+        new SSLConnectionSocketFactory(
+            DelegatingSSLSocketFactory.getDefaultFactory(),
+            (HostnameVerifier) null));
   }
 }

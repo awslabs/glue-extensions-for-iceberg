@@ -15,7 +15,7 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import com.amazonaws.AmazonServiceException;
 
 /**
  * Exception raised when a service was throttled.
@@ -33,12 +33,7 @@ public class AWSServiceThrottledException extends AWSServiceIOException {
    * @param cause the underlying cause
    */
   public AWSServiceThrottledException(String operation,
-      AwsServiceException cause) {
+      AmazonServiceException cause) {
     super(operation, cause);
-  }
-
-  @Override
-  public boolean retryable() {
-    return true;
   }
 }

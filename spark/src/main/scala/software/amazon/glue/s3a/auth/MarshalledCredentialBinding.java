@@ -15,34 +15,33 @@
 
 package software.amazon.glue.s3a.auth;
 
+import static software.amazon.glue.s3a.Constants.ACCESS_KEY;
+import static software.amazon.glue.s3a.Constants.SECRET_KEY;
+import static software.amazon.glue.s3a.Constants.SESSION_TOKEN;
+import static software.amazon.glue.s3a.S3AUtils.lookupPassword;
+
+import com.amazonaws.ClientConfiguration;
+import com.amazonaws.SdkClientException;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSSessionCredentials;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.auth.BasicSessionCredentials;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.amazonaws.services.securitytoken.model.Credentials;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.AwsCredentials;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
-import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.services.sts.StsClient;
-import software.amazon.awssdk.services.sts.model.Credentials;
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.Invoker;
 import software.amazon.glue.s3a.Retries;
 import software.amazon.glue.s3a.S3AFileSystem;
 import org.apache.hadoop.security.ProviderUtils;
-
-import static software.amazon.glue.s3a.Constants.ACCESS_KEY;
-import static software.amazon.glue.s3a.Constants.SECRET_KEY;
-import static software.amazon.glue.s3a.Constants.SESSION_TOKEN;
-import static software.amazon.glue.s3a.S3AUtils.lookupPassword;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class to bridge from the serializable/marshallabled
@@ -73,10 +72,10 @@ public final class MarshalledCredentialBinding {
   public static MarshalledCredentials fromSTSCredentials(
       final Credentials credentials) {
     MarshalledCredentials marshalled = new MarshalledCredentials(
-        credentials.accessKeyId(),
-        credentials.secretAccessKey(),
-        credentials.sessionToken());
-    Date date = Date.from(credentials.expiration());
+        credentials.getAccessKeyId(),
+        credentials.getSecretAccessKey(),
+        credentials.getSessionToken());
+    Date date = credentials.getExpiration();
     marshalled.setExpiration(date != null ? date.getTime() : 0);
     return marshalled;
   }
@@ -87,11 +86,11 @@ public final class MarshalledCredentialBinding {
    * @return a set of marshalled credentials.
    */
   public static MarshalledCredentials fromAWSCredentials(
-      final AwsSessionCredentials credentials) {
+      final AWSSessionCredentials credentials) {
     return new MarshalledCredentials(
-        credentials.accessKeyId(),
-        credentials.secretAccessKey(),
-        credentials.sessionToken());
+        credentials.getAWSAccessKeyId(),
+        credentials.getAWSSecretKey(),
+        credentials.getSessionToken());
   }
 
   /**
@@ -152,7 +151,7 @@ public final class MarshalledCredentialBinding {
    * @throws NoAuthWithAWSException validation failure
    * @throws NoAwsCredentialsException the credentials are actually empty.
    */
-  public static AwsCredentials toAWSCredentials(
+  public static AWSCredentials toAWSCredentials(
       final MarshalledCredentials marshalled,
       final MarshalledCredentials.CredentialTypeRequired typeRequired,
       final String component)
@@ -169,49 +168,44 @@ public final class MarshalledCredentialBinding {
     final String secretKey = marshalled.getSecretKey();
     if (marshalled.hasSessionToken()) {
       // a session token was supplied, so return session credentials
-      return AwsSessionCredentials.create(accessKey, secretKey,
+      return new BasicSessionCredentials(accessKey, secretKey,
           marshalled.getSessionToken());
     } else {
       // these are full credentials
-      return AwsBasicCredentials.create(accessKey, secretKey);
+      return new BasicAWSCredentials(accessKey, secretKey);
     }
   }
 
   /**
    * Request a set of credentials from an STS endpoint.
    * @param parentCredentials the parent credentials needed to talk to STS
-   * @param configuration AWS client configuration
+   * @param awsConf AWS client configuration
    * @param stsEndpoint an endpoint, use "" for none
    * @param stsRegion region; use if the endpoint isn't the AWS default.
    * @param duration duration of the credentials in seconds. Minimum value: 900.
    * @param invoker invoker to use for retrying the call.
-   * @param bucket bucket name.
    * @return the credentials
    * @throws IOException on a failure of the request
    */
   @Retries.RetryTranslated
   public static MarshalledCredentials requestSessionCredentials(
-      final AwsCredentialsProvider parentCredentials,
-      final Configuration configuration,
+      final AWSCredentialsProvider parentCredentials,
+      final ClientConfiguration awsConf,
       final String stsEndpoint,
       final String stsRegion,
       final int duration,
-      final Invoker invoker,
-      final String bucket) throws IOException {
+      final Invoker invoker) throws IOException {
     try {
-      final StsClient tokenService =
+      final AWSSecurityTokenService tokenService =
           STSClientFactory.builder(parentCredentials,
-              configuration,
+              awsConf,
               stsEndpoint.isEmpty() ? null : stsEndpoint,
-              stsRegion,
-              bucket)
+              stsRegion)
               .build();
-      try (STSClientFactory.STSClient stsClient = STSClientFactory.createClientConnection(
-          tokenService, invoker)) {
-        return fromSTSCredentials(stsClient.requestSessionCredentials(duration,
-            TimeUnit.SECONDS));
-      }
-    } catch (SdkException e) {
+      return fromSTSCredentials(
+          STSClientFactory.createClientConnection(tokenService, invoker)
+              .requestSessionCredentials(duration, TimeUnit.SECONDS));
+    } catch (SdkClientException e) {
       if (stsRegion.isEmpty()) {
         LOG.error("Region must be provided when requesting session credentials.",
             e);

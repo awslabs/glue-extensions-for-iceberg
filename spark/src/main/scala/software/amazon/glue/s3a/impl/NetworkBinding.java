@@ -15,23 +15,21 @@
 
 package software.amazon.glue.s3a.impl;
 
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.net.URI;
-import java.net.URISyntaxException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.http.apache.ApacheHttpClient;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.net.NetUtils;
-import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
-
 import static software.amazon.glue.s3a.Constants.DEFAULT_ENDPOINT;
 import static software.amazon.glue.s3a.Constants.DEFAULT_SSL_CHANNEL_MODE;
 import static software.amazon.glue.s3a.Constants.ENDPOINT;
 import static software.amazon.glue.s3a.Constants.SSL_CHANNEL_MODE;
+
+import com.amazonaws.ClientConfiguration;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Configures network settings when communicating with AWS services.
@@ -40,7 +38,7 @@ public final class NetworkBinding {
 
   private static final Logger LOG =
           LoggerFactory.getLogger(NetworkBinding.class);
-  private static final String BINDING_CLASSNAME = "org.apache.hadoop.fs.s3a.impl.ConfigureShadedAWSSocketFactory";
+  private static final String BINDING_CLASSNAME = "software.amazon.glue.s3a.impl.ConfigureShadedAWSSocketFactory";
 
   private NetworkBinding() {
   }
@@ -53,12 +51,13 @@ public final class NetworkBinding {
    * so as to avoid 
    * @param conf the {@link Configuration} used to get the client specified
    *             value of {@code SSL_CHANNEL_MODE}
-   * @param httpClientBuilder the http client builder.
+   * @param awsConf the {@code ClientConfiguration} to set the
+   *                SSLConnectionSocketFactory for.
    * @throws IOException if there is an error while initializing the
    * {@code SSLSocketFactory} other than classloader problems.
    */
   public static void bindSSLChannelMode(Configuration conf,
-      ApacheHttpClient.Builder httpClientBuilder) throws IOException {
+      ClientConfiguration awsConf) throws IOException {
 
     // Validate that SSL_CHANNEL_MODE is set to a valid value.
     String channelModeString = conf.getTrimmed(
@@ -85,7 +84,7 @@ public final class NetworkBinding {
           (Class<? extends ConfigureAWSSocketFactory>) Class.forName(BINDING_CLASSNAME);
       clazz.getConstructor()
           .newInstance()
-          .configureSocketFactory(httpClientBuilder, channelMode);
+          .configureSocketFactory(awsConf, channelMode);
     } catch (ClassNotFoundException | NoSuchMethodException |
             IllegalAccessException | InstantiationException |
             InvocationTargetException | LinkageError  e) {
@@ -95,22 +94,11 @@ public final class NetworkBinding {
   }
 
   /**
-   * Is this an AWS endpoint? looks at end of FQDN.
-   * @param endpoint endpoint
-   * @return true if the endpoint matches the requirements for an aws endpoint.
-   */
-  public static boolean isAwsEndpoint(final String endpoint) {
-    return (endpoint.isEmpty()
-        || endpoint.endsWith(".amazonaws.com")
-        || endpoint.endsWith(".amazonaws.com.cn"));
-  }
-
-  /**
    * Interface used to bind to the socket factory, allows the code which
    * works with the shaded AWS libraries to exist in their own class.
    */
   interface ConfigureAWSSocketFactory {
-    void configureSocketFactory(ApacheHttpClient.Builder httpClientBuilder,
+    void configureSocketFactory(ClientConfiguration awsConf,
         DelegatingSSLSocketFactory.SSLChannelMode channelMode)
         throws IOException;
   }
@@ -125,7 +113,7 @@ public final class NetworkBinding {
    * See also {@code com.amazonaws.services.s3.model.Region.fromValue()}
    * for its conversion logic.
    * @param region region from S3 call.
-   * @return the region to use in AWS services.
+   * @return the region to use in DDB etc.
    */
   public static String fixBucketRegion(final String region) {
     return region == null || region.equals("US")

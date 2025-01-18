@@ -1,3 +1,18 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ *
+ *  http://aws.amazon.com/apache2.0
+ *
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
 package software.amazon.glue.s3a.resolver;
 
 /**
@@ -24,8 +39,7 @@ public interface S3Resource {
    * </p>
    *
    * @return the bucket name
-   * @see
-   * <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html">
+   * @see <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html">
    * Bucket naming restrictions</a>
    */
   String getBucketName();
@@ -56,7 +70,6 @@ public interface S3Resource {
    * For the documentation for each individual Type below, assume an S3 bucket with only one object:
    * s3://myBucket/prefixPart/object
    * </p>
-   *
    */
   enum Type {
     /**
@@ -65,8 +78,7 @@ public interface S3Resource {
      * {@literal e.g. getBucketName() => myBucket ; getPath() => s3://myBucket}
      * </p>
      *
-     * @see
-     * <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#BasicsBucket">
+     * @see <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#BasicsBucket">
      * Introduction to S3 Buckets</a>
      */
     BUCKET,
@@ -78,8 +90,7 @@ public interface S3Resource {
      * {@literal e.g. getBucketName() => myBucket ; getPath() => s3://myBucket/prefixPart/object}
      * </p>
      *
-     * @see
-     * <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#BasicsObjects">
+     * @see <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#BasicsObjects">
      * Introduction to S3 Objects</a>
      */
     OBJECT,
@@ -92,11 +103,9 @@ public interface S3Resource {
      * {@literal e.g. getBucketName() => myBucket ; getPath() => s3://myBucket/prefixPart}
      * </p>
      *
-     * @see
-     * <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/ListingKeysHierarchy.html">Example
+     * @see <a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/ListingKeysHierarchy.html">Example
      * of prefixes in action 1</a>
-     * @see
-     * <a href="http://docs.aws.amazon.com/AmazonS3/latest/UG/searching-for-objects-by-prefix.html">
+     * @see <a href="http://docs.aws.amazon.com/AmazonS3/latest/UG/searching-for-objects-by-prefix.html">
      * Example of prefixes in action 2</a>
      */
     PREFIX

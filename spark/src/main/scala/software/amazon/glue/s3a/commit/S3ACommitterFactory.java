@@ -15,8 +15,9 @@
 
 package software.amazon.glue.s3a.commit;
 
-import java.io.IOException;
+import static software.amazon.glue.s3a.commit.CommitConstants.*;
 
+import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
@@ -26,8 +27,6 @@ import software.amazon.glue.s3a.commit.staging.PartitionedStagingCommitterFactor
 import software.amazon.glue.s3a.commit.staging.StagingCommitterFactory;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.output.PathOutputCommitter;
-
-import static software.amazon.glue.s3a.commit.CommitConstants.*;
 
 /**
  * The S3A committer factory which chooses the committer based on the
@@ -57,7 +56,7 @@ public class S3ACommitterFactory extends AbstractS3ACommitterFactory {
    * Name of this class: {@value}.
    */
   public static final String CLASSNAME
-      = "org.apache.hadoop.fs.s3a.commit.S3ACommitterFactory";
+      = "software.amazon.glue.s3a.commit.S3ACommitterFactory";
 
   /**
    * Create a task committer.
@@ -110,14 +109,11 @@ public class S3ACommitterFactory extends AbstractS3ACommitterFactory {
     // job/task configurations.
     Configuration fsConf = fileSystem.getConf();
 
-    String name = fsConf.getTrimmed(FS_S3A_COMMITTER_NAME, "");
-    LOG.debug("Committer from filesystems \"{}\"", name);
-
+    String name = fsConf.getTrimmed(FS_S3A_COMMITTER_NAME, COMMITTER_NAME_FILE);
     name = taskConf.getTrimmed(FS_S3A_COMMITTER_NAME, name);
-    LOG.debug("Committer option is \"{}\"", name);
+    LOG.debug("Committer option is {}", name);
     switch (name) {
     case COMMITTER_NAME_FILE:
-    case "":
       factory = null;
       break;
     case COMMITTER_NAME_DIRECTORY:

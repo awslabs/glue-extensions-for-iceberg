@@ -15,30 +15,23 @@
 
 package software.amazon.glue.s3a;
 
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.SdkBaseException;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.Optional;
-import java.util.concurrent.Future;
 import javax.annotation.Nullable;
-
-import software.amazon.glue.s3a.S3ARetryPolicy;
-import software.amazon.glue.s3a.S3AUtils;
-import software.amazon.awssdk.core.exception.SdkException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.fs.statistics.DurationTracker;
+import software.amazon.glue.s3a.Retries;
+import software.amazon.glue.s3a.S3AUtils;
 import org.apache.hadoop.io.retry.RetryPolicy;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.util.DurationInfo;
 import org.apache.hadoop.util.functional.CallableRaisingIOE;
-import org.apache.hadoop.util.functional.FutureIO;
 import org.apache.hadoop.util.functional.InvocationRaisingIOE;
-import org.apache.hadoop.util.Preconditions;
-
-
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.invokeTrackingDuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class to provide lambda expression invocation of AWS operations.
@@ -119,32 +112,7 @@ public class Invoker {
       throws IOException {
     try (DurationInfo ignored = new DurationInfo(LOG, false, "%s", action)) {
       return operation.apply();
-    } catch (SdkException e) {
-      throw S3AUtils.translateException(action, path, e);
-    }
-  }
-
-  /**
-   * Execute a function, translating any exception into an IOException.
-   * The supplied duration tracker instance is updated with success/failure.
-   * @param action action to execute (used in error messages)
-   * @param path path of work (used in error messages)
-   * @param tracker tracker to update
-   * @param operation operation to execute
-   * @param <T> type of return value
-   * @return the result of the function call
-   * @throws IOException any IOE raised, or translated exception
-   */
-  @Retries.OnceTranslated
-  public static <T> T onceTrackingDuration(
-      final String action,
-      final String path,
-      final DurationTracker tracker,
-      final CallableRaisingIOE<T> operation)
-      throws IOException {
-    try {
-      return invokeTrackingDuration(tracker, operation);
-    } catch (SdkException e) {
+    } catch (AmazonClientException e) {
       throw S3AUtils.translateException(action, path, e);
     }
   }
@@ -164,30 +132,6 @@ public class Invoker {
           operation.apply();
           return null;
         });
-  }
-
-
-  /**
-   *
-   * Wait for a future, translating SdkException into an IOException.
-   * @param action action to execute (used in error messages)
-   * @param path path of work (used in error messages)
-   * @param future future to await for
-   * @param <T> type of return value
-   * @return the result of the function call
-   * @throws IOException any IOE raised, or translated exception
-   * @throws RuntimeException any other runtime exception
-   */
-  @Retries.OnceTranslated
-  public static <T> T onceInTheFuture(String action,
-      String path,
-      final Future<T> future)
-      throws IOException {
-    try (DurationInfo ignored = new DurationInfo(LOG, false, "%s", action)) {
-      return FutureIO.awaitFuture(future);
-    } catch (SdkException e) {
-      throw S3AUtils.translateException(action, path, e);
-    }
   }
 
   /**
@@ -443,7 +387,7 @@ public class Invoker {
    * @param operation operation to execute
    * @return the result of the call
    * @throws IOException any IOE raised
-   * @throws SdkException any AWS exception raised
+   * @throws SdkBaseException any AWS exception raised
    * @throws RuntimeException : these are never caught and retries.
    */
   @Retries.RetryRaw
@@ -461,24 +405,23 @@ public class Invoker {
     do {
       try {
         if (retryCount > 0) {
-          LOG.debug("{} retry #{}", text, retryCount);
+          LOG.debug("retry #{}", retryCount);
         }
         // execute the operation, returning if successful
         return operation.apply();
-      } catch (IOException | SdkException e) {
+      } catch (IOException | SdkBaseException e) {
         caught = e;
       }
       // you only get here if the operation didn't complete
       // normally, hence caught != null
-      LOG.debug("{} ; {}, ", text, caught.toString());
-      LOG.trace("", caught);
+
       // translate the exception into an IOE for the retry logic
       IOException translated;
       if (caught instanceof IOException) {
         translated = (IOException) caught;
       } else {
-        translated = S3AUtils.translateException(text, "/",
-            (SdkException) caught);
+        translated = S3AUtils.translateException(text, "",
+            (SdkBaseException)caught);
       }
 
       try {
@@ -517,9 +460,10 @@ public class Invoker {
     if (caught instanceof IOException) {
       throw (IOException) caught;
     } else {
-      throw (SdkException) caught;
+      throw (SdkBaseException) caught;
     }
   }
+
 
   /**
    * Execute an operation; any exception raised is simply caught and

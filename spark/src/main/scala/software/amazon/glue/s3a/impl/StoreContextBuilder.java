@@ -17,14 +17,13 @@ package software.amazon.glue.s3a.impl;
 
 import java.net.URI;
 import java.util.concurrent.ExecutorService;
-
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.impl.FlagSet;
 import software.amazon.glue.s3a.Invoker;
 import software.amazon.glue.s3a.S3AInputPolicy;
 import software.amazon.glue.s3a.S3AStorageStatistics;
-import software.amazon.glue.s3a.api.PerformanceFlagEnum;
 import software.amazon.glue.s3a.audit.AuditSpanS3A;
+import software.amazon.glue.s3a.s3guard.ITtlTimeProvider;
+import software.amazon.glue.s3a.s3guard.MetadataStore;
 import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
 import org.apache.hadoop.fs.store.audit.AuditSpanSource;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -60,15 +59,17 @@ public class StoreContextBuilder {
 
   private boolean multiObjectDeleteEnabled = true;
 
+  private MetadataStore metadataStore;
+
   private boolean useListV1 = false;
 
   private ContextAccessors contextAccessors;
 
+  private ITtlTimeProvider timeProvider;
+
   private AuditSpanSource<AuditSpanS3A> auditor;
 
   private boolean isCSEEnabled;
-
-  private FlagSet<PerformanceFlagEnum> performanceFlags;
 
   public StoreContextBuilder setFsURI(final URI fsURI) {
     this.fsURI = fsURI;
@@ -142,6 +143,12 @@ public class StoreContextBuilder {
     return this;
   }
 
+  public StoreContextBuilder setMetadataStore(
+      final MetadataStore store) {
+    this.metadataStore = store;
+    return this;
+  }
+
   public StoreContextBuilder setUseListV1(
       final boolean useV1) {
     this.useListV1 = useV1;
@@ -151,6 +158,12 @@ public class StoreContextBuilder {
   public StoreContextBuilder setContextAccessors(
       final ContextAccessors accessors) {
     this.contextAccessors = accessors;
+    return this;
+  }
+
+  public StoreContextBuilder setTimeProvider(
+      final ITtlTimeProvider provider) {
+    this.timeProvider = provider;
     return this;
   }
 
@@ -176,16 +189,7 @@ public class StoreContextBuilder {
     return this;
   }
 
-  public FlagSet<PerformanceFlagEnum> getPerformanceFlags() {
-    return performanceFlags;
-  }
-
-  public StoreContextBuilder setPerformanceFlags(
-      final FlagSet<PerformanceFlagEnum> flagSet) {
-    this.performanceFlags = flagSet;
-    return this;
-  }
-
+  @SuppressWarnings("deprecation")
   public StoreContext build() {
     return new StoreContext(fsURI,
         bucket,
@@ -200,10 +204,11 @@ public class StoreContextBuilder {
         inputPolicy,
         changeDetectionPolicy,
         multiObjectDeleteEnabled,
+        metadataStore,
         useListV1,
         contextAccessors,
+        timeProvider,
         auditor,
-        isCSEEnabled,
-        performanceFlags);
+        isCSEEnabled);
   }
 }

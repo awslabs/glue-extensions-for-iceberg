@@ -16,14 +16,6 @@
 package software.amazon.glue.s3a.statistics.impl;
 
 
-import java.io.IOException;
-import java.util.Objects;
-import java.util.function.BiConsumer;
-
-import software.amazon.glue.s3a.Statistic;
-import software.amazon.glue.s3a.statistics.S3AMultipartUploaderStatistics;
-import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
-
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_ABORTED;
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_ABORT_UNDER_PATH_INVOKED;
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_COMPLETED;
@@ -31,8 +23,14 @@ import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_INSTANTIATED;
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_PART_PUT;
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_PART_PUT_BYTES;
 import static software.amazon.glue.s3a.Statistic.MULTIPART_UPLOAD_STARTED;
-import static software.amazon.glue.s3a.Statistic.OBJECT_MULTIPART_UPLOAD_INITIATED;
 import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
+
+import java.io.IOException;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.statistics.S3AMultipartUploaderStatistics;
+import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
 
 /**
  * Implementation of the uploader statistics.
@@ -71,11 +69,8 @@ public final class S3AMultipartUploaderStatisticsImpl
             MULTIPART_UPLOAD_PART_PUT_BYTES.getSymbol(),
             MULTIPART_UPLOAD_ABORTED.getSymbol(),
             MULTIPART_UPLOAD_ABORT_UNDER_PATH_INVOKED.getSymbol(),
-            MULTIPART_UPLOAD_STARTED.getSymbol())
-        .withDurationTracking(
             MULTIPART_UPLOAD_COMPLETED.getSymbol(),
-            OBJECT_MULTIPART_UPLOAD_INITIATED.getSymbol(),
-            MULTIPART_UPLOAD_PART_PUT.getSymbol())
+            MULTIPART_UPLOAD_STARTED.getSymbol())
         .build();
     setIOStatistics(st);
   }
@@ -97,12 +92,13 @@ public final class S3AMultipartUploaderStatisticsImpl
 
   @Override
   public void partPut(final long lengthInBytes) {
+    inc(MULTIPART_UPLOAD_PART_PUT, 1);
     inc(MULTIPART_UPLOAD_PART_PUT_BYTES, lengthInBytes);
   }
 
   @Override
   public void uploadCompleted() {
-    // duration tracking updates the statistics
+    inc(MULTIPART_UPLOAD_COMPLETED, 1);
   }
 
   @Override

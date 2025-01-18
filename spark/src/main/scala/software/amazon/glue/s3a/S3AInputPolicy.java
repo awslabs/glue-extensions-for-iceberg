@@ -15,53 +15,31 @@
 
 package software.amazon.glue.s3a;
 
-import javax.annotation.Nullable;
-import java.util.Collection;
-import java.util.Locale;
+import static software.amazon.glue.s3a.Constants.*;
 
+import java.util.Locale;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_ADAPTIVE;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_AVRO;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_COLUMNAR;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_CSV;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_DEFAULT;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_HBASE;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_JSON;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_ORC;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_PARQUET;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_RANDOM;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_SEQUENTIAL;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_VECTOR;
-import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_WHOLE_FILE;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Stream input policy.
+ * Filesystem input policy.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public enum S3AInputPolicy {
 
-  Normal(FS_OPTION_OPENFILE_READ_POLICY_DEFAULT, false, true),
-  Random(FS_OPTION_OPENFILE_READ_POLICY_RANDOM, true, false),
-  Sequential(FS_OPTION_OPENFILE_READ_POLICY_SEQUENTIAL, false, false);
+  Normal(INPUT_FADV_NORMAL),
+  Sequential(INPUT_FADV_SEQUENTIAL),
+  Random(INPUT_FADV_RANDOM);
 
-  /** Policy name. */
+  private static final Logger LOG =
+      LoggerFactory.getLogger(S3AInputPolicy.class);
   private final String policy;
 
-  /** Is this random IO? */
-  private final boolean randomIO;
-
-  /** Is this an adaptive policy? */
-  private final boolean adaptive;
-
-  S3AInputPolicy(String policy,
-      boolean randomIO,
-      boolean adaptive) {
+  S3AInputPolicy(String policy) {
     this.policy = policy;
-    this.randomIO = randomIO;
-    this.adaptive = adaptive;
   }
 
   @Override
@@ -69,76 +47,26 @@ public enum S3AInputPolicy {
     return policy;
   }
 
-  String getPolicy() {
-    return policy;
-  }
-
-  boolean isRandomIO() {
-    return randomIO;
-  }
-
-  boolean isAdaptive() {
-    return adaptive;
-  }
-
   /**
-   * Choose an access policy.
+   * Choose an FS access policy.
+   * Always returns something,
+   * primarily by downgrading to "normal" if there is no other match.
    * @param name strategy name from a configuration option, etc.
-   * @param defaultPolicy default policy to fall back to.
-   * @return the chosen strategy or null if there was no match and
-   * the value of {@code defaultPolicy} was "null".
+   * @return the chosen strategy
    */
-  public static S3AInputPolicy getPolicy(
-      String name,
-      @Nullable S3AInputPolicy defaultPolicy) {
+  public static S3AInputPolicy getPolicy(String name) {
     String trimmed = name.trim().toLowerCase(Locale.ENGLISH);
     switch (trimmed) {
-    case FS_OPTION_OPENFILE_READ_POLICY_ADAPTIVE:
-    case FS_OPTION_OPENFILE_READ_POLICY_DEFAULT:
-    case Constants.INPUT_FADV_NORMAL:
+    case INPUT_FADV_NORMAL:
       return Normal;
-
-      // all these options currently map to random IO.
-    case FS_OPTION_OPENFILE_READ_POLICY_HBASE:
-    case FS_OPTION_OPENFILE_READ_POLICY_RANDOM:
-    case FS_OPTION_OPENFILE_READ_POLICY_VECTOR:
+    case INPUT_FADV_RANDOM:
       return Random;
-
-      // columnar formats currently map to random IO,
-      // though in future this may be enhanced.
-    case FS_OPTION_OPENFILE_READ_POLICY_COLUMNAR:
-    case FS_OPTION_OPENFILE_READ_POLICY_ORC:
-    case FS_OPTION_OPENFILE_READ_POLICY_PARQUET:
-      return Random;
-
-      // handle the sequential formats.
-    case FS_OPTION_OPENFILE_READ_POLICY_AVRO:
-    case FS_OPTION_OPENFILE_READ_POLICY_CSV:
-    case FS_OPTION_OPENFILE_READ_POLICY_JSON:
-    case FS_OPTION_OPENFILE_READ_POLICY_SEQUENTIAL:
-    case FS_OPTION_OPENFILE_READ_POLICY_WHOLE_FILE:
+    case INPUT_FADV_SEQUENTIAL:
       return Sequential;
     default:
-      return defaultPolicy;
+      LOG.warn("Unrecognized " + INPUT_FADVISE + " value: \"{}\"", trimmed);
+      return Normal;
     }
-  }
-
-  /**
-   * Scan the list of input policies, returning the first one supported.
-   * @param policies list of policies.
-   * @param defaultPolicy fallback
-   * @return a policy or the defaultPolicy, which may be null
-   */
-  public static S3AInputPolicy getFirstSupportedPolicy(
-      Collection<String> policies,
-      @Nullable S3AInputPolicy defaultPolicy) {
-    for (String s : policies) {
-      S3AInputPolicy nextPolicy = S3AInputPolicy.getPolicy(s, null);
-      if (nextPolicy != null) {
-        return nextPolicy;
-      }
-    }
-    return defaultPolicy;
   }
 
 }

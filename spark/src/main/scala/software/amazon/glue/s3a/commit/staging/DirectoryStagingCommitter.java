@@ -15,23 +15,20 @@
 
 package software.amazon.glue.s3a.commit.staging;
 
+import static software.amazon.glue.s3a.commit.CommitConstants.*;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathExistsException;
 import software.amazon.glue.s3a.commit.InternalCommitterConstants;
-import software.amazon.glue.s3a.commit.impl.CommitContext;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
-
-import static software.amazon.glue.s3a.commit.CommitConstants.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This commits to a directory.
@@ -96,18 +93,17 @@ public class DirectoryStagingCommitter extends StagingCommitter {
    * Pre-commit actions for a job.
    * Here: look at the conflict resolution mode and choose
    * an action based on the current policy.
-   * @param commitContext commit context
+   * @param context job context
    * @param pending pending commits
    * @throws IOException any failure
    */
   @Override
   public void preCommitJob(
-      final CommitContext commitContext,
+      final JobContext context,
       final ActiveCommit pending) throws IOException {
 
-    final JobContext context = commitContext.getJobContext();
     // see if the files can be loaded.
-    super.preCommitJob(commitContext, pending);
+    super.preCommitJob(context, pending);
     Path outputPath = getOutputPath();
     FileSystem fs = getDestFS();
     Configuration fsConf = fs.getConf();

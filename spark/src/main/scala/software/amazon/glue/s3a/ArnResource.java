@@ -15,16 +15,14 @@
 
 package software.amazon.glue.s3a;
 
+import com.amazonaws.arn.Arn;
 import javax.annotation.Nonnull;
-
-import software.amazon.awssdk.arns.Arn;
 
 /**
  * Represents an Arn Resource, this can be an accesspoint or bucket.
  */
 public final class ArnResource {
-  private final static String S3_ACCESSPOINT_ENDPOINT_FORMAT = "s3-accesspoint.%s.amazonaws.com";
-  private final static String S3_OUTPOSTS_ACCESSPOINT_ENDPOINT_FORMAT = "s3-outposts.%s.amazonaws.com";
+  private final static String ACCESSPOINT_ENDPOINT_FORMAT = "s3-accesspoint.%s.amazonaws.com";
 
   /**
    * Resource name.
@@ -67,10 +65,6 @@ public final class ArnResource {
     this.accessPointRegionKey = String.format("accesspoint-%s", region);
   }
 
-  private boolean isOutposts(){
-    return fullArn.contains("s3-outposts");
-  }
-
   /**
    * Resource name.
    * @return resource name.
@@ -108,8 +102,7 @@ public final class ArnResource {
    * @return resource endpoint.
    */
   public String getEndpoint() {
-    String format = isOutposts() ? S3_OUTPOSTS_ACCESSPOINT_ENDPOINT_FORMAT : S3_ACCESSPOINT_ENDPOINT_FORMAT;
-    return String.format(format, region);
+    return String.format(ACCESSPOINT_ENDPOINT_FORMAT, region);
   }
 
   /**
@@ -123,14 +116,14 @@ public final class ArnResource {
   public static ArnResource accessPointFromArn(String arn) throws IllegalArgumentException {
     Arn parsed = Arn.fromString(arn);
 
-    if (!parsed.region().isPresent() || !parsed.accountId().isPresent() ||
-        parsed.resourceAsString().isEmpty()) {
+    if (parsed.getRegion().isEmpty() || parsed.getAccountId().isEmpty() ||
+        parsed.getResourceAsString().isEmpty()) {
       throw new IllegalArgumentException(
           String.format("Access Point Arn %s has an invalid format or missing properties", arn));
     }
 
-    String resourceName = parsed.resource().resource();
-    return new ArnResource(resourceName, parsed.accountId().get(), parsed.region().get(),
-        parsed.partition(), arn);
+    String resourceName = parsed.getResource().getResource();
+    return new ArnResource(resourceName, parsed.getAccountId(), parsed.getRegion(),
+        parsed.getPartition(), arn);
   }
 }

@@ -16,10 +16,6 @@
 package software.amazon.glue.s3a.commit;
 
 import java.io.IOException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
@@ -27,6 +23,8 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.output.PathOutputCommitter;
 import org.apache.hadoop.mapreduce.lib.output.PathOutputCommitterFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Dynamically create the output committer based on subclass type and settings.
@@ -48,10 +46,9 @@ public abstract class AbstractS3ACommitterFactory
       throw new PathCommitException(outputPath,
           "Filesystem not supported by this committer");
     }
-    LOG.info("Using Committer {} for {} created by {}",
+    LOG.info("Using Committer {} for {}",
         outputCommitter,
-        outputPath,
-        this);
+        outputPath);
     return outputCommitter;
   }
 

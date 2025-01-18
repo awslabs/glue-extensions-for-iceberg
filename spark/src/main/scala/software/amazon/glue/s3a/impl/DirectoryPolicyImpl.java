@@ -16,28 +16,26 @@
 package software.amazon.glue.s3a.impl;
 
 
-import java.util.EnumSet;
-import java.util.Locale;
-import java.util.Set;
-import java.util.function.Predicate;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-
 import static software.amazon.glue.s3a.Constants.DEFAULT_DIRECTORY_MARKER_POLICY;
 import static software.amazon.glue.s3a.Constants.DIRECTORY_MARKER_POLICY;
 import static software.amazon.glue.s3a.Constants.DIRECTORY_MARKER_POLICY_AUTHORITATIVE;
 import static software.amazon.glue.s3a.Constants.DIRECTORY_MARKER_POLICY_DELETE;
 import static software.amazon.glue.s3a.Constants.DIRECTORY_MARKER_POLICY_KEEP;
-import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_AWARE;
 import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_ACTION_DELETE;
 import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_ACTION_KEEP;
+import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_AWARE;
 import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_POLICY_AUTHORITATIVE;
 import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_POLICY_DELETE;
 import static software.amazon.glue.s3a.Constants.STORE_CAPABILITY_DIRECTORY_MARKER_POLICY_KEEP;
+
+import java.util.EnumSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.Predicate;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Implementation of directory policy.
@@ -183,11 +181,11 @@ public final class DirectoryPolicyImpl
       policy = DELETE;
       break;
     case DIRECTORY_MARKER_POLICY_KEEP:
-      LOG.debug("Directory markers will be kept");
+      LOG.info("Directory markers will be kept");
       policy = KEEP;
       break;
     case DIRECTORY_MARKER_POLICY_AUTHORITATIVE:
-      LOG.debug("Directory markers will be kept on authoritative"
+      LOG.info("Directory markers will be kept on authoritative"
           + " paths");
       policy = new DirectoryPolicyImpl(MarkerPolicy.Authoritative,
           authoritativeness);

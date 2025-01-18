@@ -15,19 +15,18 @@
 
 package software.amazon.glue.s3a.tools;
 
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.DeleteObjectsResult;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import java.io.IOException;
 import java.util.List;
-
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-
 import org.apache.hadoop.fs.InvalidRequestException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import software.amazon.glue.s3a.Retries;
 import software.amazon.glue.s3a.S3AFileStatus;
-import software.amazon.glue.s3a.impl.MultiObjectDeleteException;
-
+import software.amazon.glue.s3a.s3guard.BulkOperationState;
 
 /**
  * Operations which must be offered by the store for {@link MarkerTool}.
@@ -37,7 +36,8 @@ import software.amazon.glue.s3a.impl.MultiObjectDeleteException;
 public interface MarkerToolOperations {
 
   /**
-   * Create an iterator over objects in S3.
+   * Create an iterator over objects in S3 only; S3Guard
+   * is not involved.
    * The listing includes the key itself, if found.
    * @param path  path of the listing.
    * @param key object key
@@ -51,23 +51,36 @@ public interface MarkerToolOperations {
       throws IOException;
 
   /**
-   * Remove keys from the store.
+   * Remove keys from the store, updating the metastore on a
+   * partial delete represented as a MultiObjectDeleteException failure by
+   * deleting all those entries successfully deleted and then rethrowing
+   * the MultiObjectDeleteException.
    * @param keysToDelete collection of keys to delete on the s3-backend.
    *        if empty, no request is made of the object store.
    * @param deleteFakeDir indicates whether this is for deleting fake dirs.
+   * @param undeletedObjectsOnFailure List which will be built up of all
+   * files that were not deleted. This happens even as an exception
+   * is raised.
+   * @param operationState bulk operation state
+   * @param quiet should a bulk query be quiet, or should its result list
    * all deleted keys
+   * @return the deletion result if a multi object delete was invoked
+   * and it returned without a failure, else null.
    * @throws InvalidRequestException if the request was rejected due to
    * a mistaken attempt to delete the root directory.
    * @throws MultiObjectDeleteException one or more of the keys could not
    * be deleted in a multiple object delete operation.
-   * @throws AwsServiceException amazon-layer failure.
+   * @throws AmazonClientException amazon-layer failure.
    * @throws IOException other IO Exception.
    */
   @Retries.RetryMixed
-  void removeKeys(
-      List<ObjectIdentifier> keysToDelete,
-      boolean deleteFakeDir)
-      throws MultiObjectDeleteException, AwsServiceException,
+  DeleteObjectsResult removeKeys(
+      List<DeleteObjectsRequest.KeyVersion> keysToDelete,
+      boolean deleteFakeDir,
+      List<Path> undeletedObjectsOnFailure,
+      BulkOperationState operationState,
+      boolean quiet)
+      throws MultiObjectDeleteException, AmazonClientException,
              IOException;
 
 }

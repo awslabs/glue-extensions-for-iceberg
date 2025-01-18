@@ -17,6 +17,7 @@ package software.amazon.glue;
 import static software.amazon.glue.GlueExtensionsEndpoint.GLUE_ENDPOINT;
 import static software.amazon.glue.GlueExtensionsEndpoint.GLUE_REGION;
 
+import com.amazonaws.auth.AWSCredentialsProvider;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.collect.ImmutableMap;
@@ -30,12 +31,12 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.iceberg.catalog.SessionCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.glue.auth.GlueTableCredentialsProvider;
 import software.amazon.glue.responses.LoadTableResponse;
 import software.amazon.glue.s3a.resolver.S3Call;
 import software.amazon.glue.s3a.resolver.S3CredentialsResolver;
 import software.amazon.glue.s3a.resolver.S3Resource;
+import software.amazon.glue.s3a.util.V1V2AwsCredentialProviderAdapter;
 
 public class GlueTableCredentialsResolver implements S3CredentialsResolver {
 
@@ -79,23 +80,25 @@ public class GlueTableCredentialsResolver implements S3CredentialsResolver {
   }
 
   @Override
-  public AwsCredentialsProvider resolve(S3Call s3Call) {
+  public AWSCredentialsProvider resolve(S3Call s3Call) {
     Collection<S3Resource> s3Resources = s3Call.getS3Resources();
     for (S3Resource resource : s3Resources) {
       String s3Path = resource.getPath();
       if (GlueTableLocationProvider.isAnnotatedStagingLocation(s3Path)) {
         String tablePath = GlueTableLocationProvider.tablePathFromAnnotatedStagingLocation(s3Path);
 
-        return credsProviderCache.get(
-            tablePath,
-            key -> {
-              LOG.info("Initializing credentials provider for table {}", tablePath);
-              LoadTableResponse response =
-                  this.client.get(
-                      tablePath, LoadTableResponse.class, ErrorHandlers.tableErrorHandler());
-              return new GlueTableCredentialsProvider(
-                  client, key, new GlueLoadTableConfig(response.config()));
-            });
+        GlueTableCredentialsProvider glueTableCredentialsProvider = credsProviderCache.get(
+                tablePath,
+                key -> {
+                  LOG.info("Initializing credentials provider for table {}", tablePath);
+                  LoadTableResponse response =
+                          this.client.get(
+                                  tablePath, LoadTableResponse.class, ErrorHandlers.tableErrorHandler());
+                  return new GlueTableCredentialsProvider(
+                          client, key, new GlueLoadTableConfig(response.config()));
+                });
+
+        return V1V2AwsCredentialProviderAdapter.adapt(glueTableCredentialsProvider);
       }
     }
 

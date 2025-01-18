@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.statistics.impl;
 
 import java.util.concurrent.atomic.AtomicLong;
-
 import software.amazon.glue.s3a.statistics.ChangeTrackerStatistics;
 
 /**

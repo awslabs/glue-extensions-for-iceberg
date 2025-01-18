@@ -15,19 +15,16 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.commit.CommitConstants.BASE;
+import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC;
+import static software.amazon.glue.s3a.commit.InternalCommitterConstants.E_NO_MAGIC_PATH_ELEMENT;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkArgument;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.IntStream;
-
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.StringUtils;
-
-import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC_PATH_PREFIX;
-import static org.apache.hadoop.util.Preconditions.checkArgument;
-import static software.amazon.glue.s3a.commit.CommitConstants.BASE;
-import static software.amazon.glue.s3a.commit.InternalCommitterConstants.E_NO_MAGIC_PATH_ELEMENT;
 
 /**
  * Operations on (magic) paths.
@@ -75,8 +72,7 @@ public final class MagicCommitPaths {
    * @return true if a path is considered magic
    */
   public static boolean isMagicPath(List<String> elements) {
-    return elements.stream()
-        .anyMatch(element -> element.startsWith(MAGIC_PATH_PREFIX));
+    return elements.contains(MAGIC);
   }
 
   /**
@@ -96,16 +92,9 @@ public final class MagicCommitPaths {
    * @throws IllegalArgumentException if there is no magic element
    */
   public static int magicElementIndex(List<String> elements) {
-    Optional<Integer> index = IntStream.range(0, elements.size())
-        .filter(i -> elements.get(i).startsWith(MAGIC_PATH_PREFIX))
-        .boxed()
-        .findFirst();
-
-    if (index.isPresent()) {
-      return index.get();
-    } else {
-      throw new IllegalArgumentException(E_NO_MAGIC_PATH_ELEMENT);
-    }
+    int index = elements.indexOf(MAGIC);
+    checkArgument(index >= 0, E_NO_MAGIC_PATH_ELEMENT);
+    return index;
   }
 
   /**
@@ -190,8 +179,17 @@ public final class MagicCommitPaths {
   }
 
   /**
+   * Get the magic subdirectory of a destination directory.
+   * @param destDir the destination directory
+   * @return a new path.
+   */
+  public static Path magicSubdir(Path destDir) {
+    return new Path(destDir, MAGIC);
+  }
+
+  /**
    * Calculates the final destination of a file.
-   * This is the parent of any "MAGIC PATH" element, and the filename
+   * This is the parent of any {@code __magic} element, and the filename
    * of the path. That is: all intermediate child path elements are discarded.
    * Why so? paths under the magic path include job attempt and task attempt
    * subdirectories, which need to be skipped.
@@ -206,8 +204,8 @@ public final class MagicCommitPaths {
     if (isMagicPath(elements)) {
       List<String> destDir = magicPathParents(elements);
       List<String> children = magicPathChildren(elements);
-      checkArgument(!children.isEmpty(), "No path found under the prefix " +
-          MAGIC_PATH_PREFIX);
+      checkArgument(!children.isEmpty(), "No path found under " +
+          MAGIC);
       ArrayList<String> dest = new ArrayList<>(destDir);
       if (containsBasePath(children)) {
         // there's a base marker in the path

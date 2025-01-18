@@ -15,15 +15,16 @@
 
 package software.amazon.glue.s3a.audit.impl;
 
-import javax.annotation.Nullable;
+import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
+
+import com.amazonaws.handlers.RequestHandler2;
+import com.amazonaws.services.s3.transfer.Transfer;
+import com.amazonaws.services.s3.transfer.internal.TransferStateChangeListener;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-
-import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
-import software.amazon.awssdk.transfer.s3.progress.TransferListener;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -34,9 +35,6 @@ import software.amazon.glue.s3a.audit.AuditSpanS3A;
 import software.amazon.glue.s3a.audit.OperationAuditor;
 import software.amazon.glue.s3a.audit.OperationAuditorOptions;
 import org.apache.hadoop.service.CompositeService;
-
-
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
 
 /**
  * Simple No-op audit manager for use before a real
@@ -118,13 +116,17 @@ public class NoopAuditManagerS3A extends CompositeService
   }
 
   @Override
-  public List<ExecutionInterceptor> createExecutionInterceptors() throws IOException {
+  public List<RequestHandler2> createRequestHandlers() throws IOException {
     return new ArrayList<>();
   }
 
   @Override
-  public TransferListener createTransferListener() {
-    return new TransferListener() {};
+  public TransferStateChangeListener createStateChangeListener() {
+    return new TransferStateChangeListener() {
+      public void transferStateChanged(final Transfer transfer,
+          final Transfer.TransferState state) {
+      }
+    };
   }
 
   /**

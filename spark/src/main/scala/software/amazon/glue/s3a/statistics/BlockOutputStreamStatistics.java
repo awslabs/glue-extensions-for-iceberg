@@ -22,29 +22,27 @@ import java.time.Duration;
  * Block output stream statistics.
  */
 public interface BlockOutputStreamStatistics extends Closeable,
-    S3AStatisticInterface,
-    PutTrackerStatistics {
+    S3AStatisticInterface {
 
   /**
    * Block is queued for upload.
    * @param blockSize block size.
    */
-  void blockUploadQueued(long blockSize);
+  void blockUploadQueued(int blockSize);
 
   /**
    * Queued block has been scheduled for upload.
    * @param timeInQueue time in the queue.
    * @param blockSize block size.
    */
-  void blockUploadStarted(Duration timeInQueue, long blockSize);
+  void blockUploadStarted(Duration timeInQueue, int blockSize);
 
   /**
-   * A block upload has completed, successfully or not.
-   * Duration excludes time in the queue.
+   * A block upload has completed. Duration excludes time in the queue.
    * @param timeSinceUploadStarted time in since the transfer began.
    * @param blockSize block size
    */
-  void blockUploadCompleted(Duration timeSinceUploadStarted, long blockSize);
+  void blockUploadCompleted(Duration timeSinceUploadStarted, int blockSize);
 
   /**
    *  A block upload has failed. Duration excludes time in the queue.
@@ -55,7 +53,7 @@ public interface BlockOutputStreamStatistics extends Closeable,
    * @param timeSinceUploadStarted time in since the transfer began.
    * @param blockSize block size
    */
-  void blockUploadFailed(Duration timeSinceUploadStarted, long blockSize);
+  void blockUploadFailed(Duration timeSinceUploadStarted, int blockSize);
 
   /**
    * Intermediate report of bytes uploaded.

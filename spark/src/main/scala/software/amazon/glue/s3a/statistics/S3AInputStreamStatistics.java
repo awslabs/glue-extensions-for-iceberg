@@ -15,16 +15,15 @@
 
 package software.amazon.glue.s3a.statistics;
 
-import org.apache.hadoop.fs.impl.prefetch.PrefetchingStatistics;
 import org.apache.hadoop.fs.statistics.DurationTracker;
 
 /**
  * Statistics updated by a
- * {@link org.apache.hadoop.fs.s3a.S3AInputStream} during its use.
+ * {@link software.amazon.glue.s3a.S3AInputStream} during its use.
  * It also contains getters for tests.
  */
 public interface S3AInputStreamStatistics extends AutoCloseable,
-    S3AStatisticInterface, PrefetchingStatistics {
+    S3AStatisticInterface {
 
   /**
    * Seek backwards, incrementing the seek and backward seek counters.
@@ -93,20 +92,6 @@ public interface S3AInputStreamStatistics extends AutoCloseable,
    * @param actual the actual number of bytes
    */
   void readOperationCompleted(int requested, int actual);
-
-  /**
-   * A vectored read operation has started..
-   * @param numIncomingRanges number of input ranges.
-   * @param numCombinedRanges number of combined ranges.
-   */
-  void readVectoredOperationStarted(int numIncomingRanges,
-                                    int numCombinedRanges);
-
-  /**
-   * Number of bytes discarded during vectored read.
-   * @param discarded discarded bytes during vectored read.
-   */
-  void readVectoredBytesDiscarded(int discarded);
 
   @Override
   void close();
@@ -199,12 +184,5 @@ public interface S3AInputStreamStatistics extends AutoCloseable,
    * @return duration tracker;
    */
   DurationTracker initiateGetRequest();
-
-  /**
-   * Initiate a stream close/abort.
-   * @param abort was the stream aborted?
-   * @return duration tracker;
-   */
-  DurationTracker initiateInnerStreamClose(boolean abort);
 
 }

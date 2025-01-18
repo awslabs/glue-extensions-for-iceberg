@@ -15,37 +15,32 @@
 
 package software.amazon.glue.s3a.impl;
 
-import javax.annotation.Nullable;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.TreeMap;
-
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadBucketResponse;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.fs.Path;
-import software.amazon.glue.s3a.Retries;
-import software.amazon.glue.s3a.Statistic;
-import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
-
 import static software.amazon.glue.s3a.Constants.XA_HEADER_PREFIX;
 import static software.amazon.glue.s3a.Statistic.INVOCATION_OP_XATTR_LIST;
 import static software.amazon.glue.s3a.Statistic.INVOCATION_XATTR_GET_MAP;
 import static software.amazon.glue.s3a.Statistic.INVOCATION_XATTR_GET_NAMED;
 import static software.amazon.glue.s3a.Statistic.INVOCATION_XATTR_GET_NAMED_MAP;
 import static software.amazon.glue.s3a.commit.CommitConstants.X_HEADER_MAGIC_MARKER;
-import static software.amazon.glue.s3a.impl.AWSHeaders.SERVER_SIDE_ENCRYPTION_AWS_KMS_KEY_ID;
 import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.trackDuration;
+
+import com.amazonaws.services.s3.Headers;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
+import javax.annotation.Nullable;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.fs.Path;
+import software.amazon.glue.s3a.Retries;
+import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Part of the S3A FS where object headers are
@@ -75,50 +70,50 @@ public class HeaderProcessing extends AbstractStoreOperation {
    * Standard HTTP header found on some S3 objects: {@value}.
    */
   public static final String XA_CACHE_CONTROL =
-      XA_HEADER_PREFIX + AWSHeaders.CACHE_CONTROL;
+      XA_HEADER_PREFIX + Headers.CACHE_CONTROL;
   /**
    * Standard HTTP header found on some S3 objects: {@value}.
    */
   public static final String XA_CONTENT_DISPOSITION =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_DISPOSITION;
+      XA_HEADER_PREFIX + Headers.CONTENT_DISPOSITION;
 
   /**
-   * Content encoding; can be configured: {@value}.
+   * Standard HTTP header found on some S3 objects: {@value}.
    */
   public static final String XA_CONTENT_ENCODING =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_ENCODING;
+      XA_HEADER_PREFIX + Headers.CONTENT_ENCODING;
 
   /**
    * Standard HTTP header found on some S3 objects: {@value}.
    */
   public static final String XA_CONTENT_LANGUAGE =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_LANGUAGE;
+      XA_HEADER_PREFIX + Headers.CONTENT_LANGUAGE;
 
   /**
    * Length XAttr: {@value}.
    */
   public static final String XA_CONTENT_LENGTH =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_LENGTH;
+      XA_HEADER_PREFIX + Headers.CONTENT_LENGTH;
 
   /**
    * Standard HTTP header found on some S3 objects: {@value}.
    */
   public static final String XA_CONTENT_MD5 =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_MD5;
+      XA_HEADER_PREFIX + Headers.CONTENT_MD5;
 
   /**
    * Content range: {@value}.
    * This is returned on GET requests with ranges.
    */
   public static final String XA_CONTENT_RANGE =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_RANGE;
+      XA_HEADER_PREFIX + Headers.CONTENT_RANGE;
 
   /**
    * Content type: may be set when uploading.
    * {@value}.
    */
   public static final String XA_CONTENT_TYPE =
-      XA_HEADER_PREFIX + AWSHeaders.CONTENT_TYPE;
+      XA_HEADER_PREFIX + Headers.CONTENT_TYPE;
 
   /**
    * Etag Header {@value}.
@@ -126,14 +121,14 @@ public class HeaderProcessing extends AbstractStoreOperation {
    * it can be retrieved via {@code getFileChecksum(path)} if
    * the S3A connector is enabled.
    */
-  public static final String XA_ETAG = XA_HEADER_PREFIX + AWSHeaders.ETAG;
+  public static final String XA_ETAG = XA_HEADER_PREFIX + Headers.ETAG;
 
 
   /**
    * last modified XAttr: {@value}.
    */
   public static final String XA_LAST_MODIFIED =
-      XA_HEADER_PREFIX + AWSHeaders.LAST_MODIFIED;
+      XA_HEADER_PREFIX + Headers.LAST_MODIFIED;
 
   /* AWS Specific Headers. May not be found on other S3 endpoints. */
 
@@ -144,53 +139,50 @@ public class HeaderProcessing extends AbstractStoreOperation {
    * Value {@value}.
    */
   public static final String XA_ARCHIVE_STATUS =
-      XA_HEADER_PREFIX + AWSHeaders.ARCHIVE_STATUS;
+      XA_HEADER_PREFIX + Headers.ARCHIVE_STATUS;
 
   /**
    *  Object legal hold status. {@value}.
    */
   public static final String XA_OBJECT_LOCK_LEGAL_HOLD_STATUS =
-      XA_HEADER_PREFIX + AWSHeaders.OBJECT_LOCK_LEGAL_HOLD_STATUS;
+      XA_HEADER_PREFIX + Headers.OBJECT_LOCK_LEGAL_HOLD_STATUS;
 
   /**
    *  Object lock mode. {@value}.
    */
   public static final String XA_OBJECT_LOCK_MODE =
-      XA_HEADER_PREFIX + AWSHeaders.OBJECT_LOCK_MODE;
+      XA_HEADER_PREFIX + Headers.OBJECT_LOCK_MODE;
 
   /**
    *  ISO8601 expiry date of object lock hold. {@value}.
    */
   public static final String XA_OBJECT_LOCK_RETAIN_UNTIL_DATE =
-      XA_HEADER_PREFIX + AWSHeaders.OBJECT_LOCK_RETAIN_UNTIL_DATE;
+      XA_HEADER_PREFIX + Headers.OBJECT_LOCK_RETAIN_UNTIL_DATE;
 
   /**
    *  Replication status for cross-region replicated objects. {@value}.
    */
   public static final String XA_OBJECT_REPLICATION_STATUS =
-      XA_HEADER_PREFIX + AWSHeaders.OBJECT_REPLICATION_STATUS;
+      XA_HEADER_PREFIX + Headers.OBJECT_REPLICATION_STATUS;
 
   /**
    *  Version ID; empty for non-versioned buckets/data. {@value}.
    */
   public static final String XA_S3_VERSION_ID =
-      XA_HEADER_PREFIX + AWSHeaders.S3_VERSION_ID;
+      XA_HEADER_PREFIX + Headers.S3_VERSION_ID;
 
   /**
    * The server-side encryption algorithm to use
    * with AWS-managed keys: {@value}.
    */
   public static final String XA_SERVER_SIDE_ENCRYPTION =
-      XA_HEADER_PREFIX + AWSHeaders.SERVER_SIDE_ENCRYPTION;
-
-  public static final String XA_ENCRYPTION_KEY_ID =
-      XA_HEADER_PREFIX + SERVER_SIDE_ENCRYPTION_AWS_KMS_KEY_ID;
+      XA_HEADER_PREFIX + Headers.SERVER_SIDE_ENCRYPTION;
 
   /**
    * Storage Class XAttr: {@value}.
    */
   public static final String XA_STORAGE_CLASS =
-      XA_HEADER_PREFIX + AWSHeaders.STORAGE_CLASS;
+      XA_HEADER_PREFIX + Headers.STORAGE_CLASS;
 
   /**
    * HTTP Referrer for logs: {@value}.
@@ -278,28 +270,9 @@ public class HeaderProcessing extends AbstractStoreOperation {
       final Statistic statistic) throws IOException {
     StoreContext context = getStoreContext();
     String objectKey = context.pathToKey(path);
+    ObjectMetadata md;
     String symbol = statistic.getSymbol();
     S3AStatisticsContext instrumentation = context.getInstrumentation();
-    Map<String, byte[]> headers = new TreeMap<>();
-    HeadObjectResponse md;
-
-    // Attempting to get metadata for the root, so use head bucket.
-    if (objectKey.isEmpty()) {
-      HeadBucketResponse headBucketResponse =
-          trackDuration(instrumentation, symbol, () -> callbacks.getBucketMetadata());
-
-      if (headBucketResponse.sdkHttpResponse() != null
-          && headBucketResponse.sdkHttpResponse().headers() != null
-          && headBucketResponse.sdkHttpResponse().headers().get(AWSHeaders.CONTENT_TYPE) != null) {
-        maybeSetHeader(headers, XA_CONTENT_TYPE,
-            headBucketResponse.sdkHttpResponse().headers().get(AWSHeaders.CONTENT_TYPE).get(0));
-      }
-
-      maybeSetHeader(headers, XA_CONTENT_LENGTH, 0);
-
-      return headers;
-    }
-
     try {
       md = trackDuration(instrumentation, symbol, () ->
               callbacks.getObjectMetadata(objectKey));
@@ -309,66 +282,59 @@ public class HeaderProcessing extends AbstractStoreOperation {
           callbacks.getObjectMetadata(objectKey + "/"));
     }
     // all user metadata
-    Map<String, String> rawHeaders = md.metadata();
+    Map<String, String> rawHeaders = md.getUserMetadata();
+    Map<String, byte[]> headers = new TreeMap<>();
     rawHeaders.forEach((key, value) ->
         headers.put(XA_HEADER_PREFIX + key, encodeBytes(value)));
 
     // and add the usual content length &c, if set
     maybeSetHeader(headers, XA_CACHE_CONTROL,
-        md.cacheControl());
+        md.getCacheControl());
     maybeSetHeader(headers, XA_CONTENT_DISPOSITION,
-        md.contentDisposition());
+        md.getContentDisposition());
     maybeSetHeader(headers, XA_CONTENT_ENCODING,
-        md.contentEncoding());
+        md.getContentEncoding());
     maybeSetHeader(headers, XA_CONTENT_LANGUAGE,
-        md.contentLanguage());
+        md.getContentLanguage());
     // If CSE is enabled, use the unencrypted content length.
-    // TODO: CSE is not supported yet, add these headers in during CSE work.
-//    if (md.getUserMetaDataOf(Headers.CRYPTO_CEK_ALGORITHM) != null
-//        && md.getUserMetaDataOf(Headers.UNENCRYPTED_CONTENT_LENGTH) != null) {
-//      maybeSetHeader(headers, XA_CONTENT_LENGTH,
-//          md.getUserMetaDataOf(Headers.UNENCRYPTED_CONTENT_LENGTH));
-//    } else {
-//      maybeSetHeader(headers, XA_CONTENT_LENGTH,
-//          md.contentLength());
-//    }
-//    maybeSetHeader(headers, XA_CONTENT_MD5,
-//        md.getContentMD5());
-    // TODO: Add back in else block during CSE work.
-    maybeSetHeader(headers, XA_CONTENT_LENGTH,
-        md.contentLength());
-    if (md.sdkHttpResponse() != null && md.sdkHttpResponse().headers() != null
-        && md.sdkHttpResponse().headers().get("Content-Range") != null) {
-      maybeSetHeader(headers, XA_CONTENT_RANGE,
-          md.sdkHttpResponse().headers().get("Content-Range").get(0));
+    if (md.getUserMetaDataOf(Headers.CRYPTO_CEK_ALGORITHM) != null
+        && md.getUserMetaDataOf(Headers.UNENCRYPTED_CONTENT_LENGTH) != null) {
+      maybeSetHeader(headers, XA_CONTENT_LENGTH,
+          md.getUserMetaDataOf(Headers.UNENCRYPTED_CONTENT_LENGTH));
+    } else {
+      maybeSetHeader(headers, XA_CONTENT_LENGTH,
+          md.getContentLength());
     }
+    maybeSetHeader(headers, XA_CONTENT_MD5,
+        md.getContentMD5());
+    maybeSetHeader(headers, XA_CONTENT_RANGE,
+        md.getContentRange());
     maybeSetHeader(headers, XA_CONTENT_TYPE,
-        md.contentType());
+        md.getContentType());
     maybeSetHeader(headers, XA_ETAG,
-        md.eTag());
+        md.getETag());
     maybeSetHeader(headers, XA_LAST_MODIFIED,
-        Date.from(md.lastModified()));
+        md.getLastModified());
 
     // AWS custom headers
     maybeSetHeader(headers, XA_ARCHIVE_STATUS,
-        md.archiveStatus());
+        md.getArchiveStatus());
     maybeSetHeader(headers, XA_OBJECT_LOCK_LEGAL_HOLD_STATUS,
-        md.objectLockLegalHoldStatus());
+        md.getObjectLockLegalHoldStatus());
     maybeSetHeader(headers, XA_OBJECT_LOCK_MODE,
-        md.objectLockMode());
+        md.getObjectLockMode());
     maybeSetHeader(headers, XA_OBJECT_LOCK_RETAIN_UNTIL_DATE,
-        md.objectLockRetainUntilDate());
+        md.getObjectLockRetainUntilDate());
     maybeSetHeader(headers, XA_OBJECT_REPLICATION_STATUS,
-        md.replicationStatus());
+        md.getReplicationStatus());
     maybeSetHeader(headers, XA_S3_VERSION_ID,
-        md.versionId());
+        md.getVersionId());
     maybeSetHeader(headers, XA_SERVER_SIDE_ENCRYPTION,
-        md.serverSideEncryptionAsString());
-    maybeSetHeader(headers, XA_ENCRYPTION_KEY_ID,
-            md.ssekmsKeyId());
+        md.getSSEAlgorithm());
     maybeSetHeader(headers, XA_STORAGE_CLASS,
-        md.storageClassAsString());
-
+        md.getStorageClass());
+    maybeSetHeader(headers, XA_STORAGE_CLASS,
+        md.getReplicationStatus());
     return headers;
   }
 
@@ -487,51 +453,70 @@ public class HeaderProcessing extends AbstractStoreOperation {
   }
 
   /**
-   * Creates a copy of the passed metadata.
+   * Creates a copy of the passed {@link ObjectMetadata}.
+   * Does so without using the {@link ObjectMetadata#clone()} method,
+   * to avoid copying unnecessary headers.
    * This operation does not copy the {@code X_HEADER_MAGIC_MARKER}
    * header to avoid confusion. If a marker file is renamed,
    * it loses information about any remapped file.
    * If new fields are added to ObjectMetadata which are not
    * present in the user metadata headers, they will not be picked
    * up or cloned unless this operation is updated.
-   * @param source the source metadata to copy
+   * @param source the {@link ObjectMetadata} to copy
    * @param dest the metadata to update; this is the return value.
-   * @param copyObjectRequestBuilder CopyObjectRequest builder
    */
-  public static void cloneObjectMetadata(HeadObjectResponse source,
-      Map<String, String> dest, CopyObjectRequest.Builder copyObjectRequestBuilder) {
+  public static void cloneObjectMetadata(ObjectMetadata source,
+      ObjectMetadata dest) {
 
     // Possibly null attributes
     // Allowing nulls to pass breaks it during later use
-    if (source.cacheControl() != null) {
-      copyObjectRequestBuilder.cacheControl(source.cacheControl());
+    if (source.getCacheControl() != null) {
+      dest.setCacheControl(source.getCacheControl());
     }
-    if (source.contentDisposition() != null) {
-      copyObjectRequestBuilder.contentDisposition(source.contentDisposition());
+    if (source.getContentDisposition() != null) {
+      dest.setContentDisposition(source.getContentDisposition());
     }
-    if (source.contentEncoding() != null) {
-      copyObjectRequestBuilder.contentEncoding(source.contentEncoding());
+    if (source.getContentEncoding() != null) {
+      dest.setContentEncoding(source.getContentEncoding());
     }
-
-    if (source.contentType() != null) {
-      copyObjectRequestBuilder.contentType(source.contentType());
+    if (source.getContentMD5() != null) {
+      dest.setContentMD5(source.getContentMD5());
     }
-
-    if (source.serverSideEncryption() != null) {
-      copyObjectRequestBuilder.serverSideEncryption(source.serverSideEncryption());
+    if (source.getContentType() != null) {
+      dest.setContentType(source.getContentType());
     }
-
-    if (source.sseCustomerAlgorithm() != null) {
-      copyObjectRequestBuilder.copySourceSSECustomerAlgorithm(source.sseCustomerAlgorithm());
+    if (source.getExpirationTime() != null) {
+      dest.setExpirationTime(source.getExpirationTime());
     }
-    if (source.sseCustomerKeyMD5() != null) {
-      copyObjectRequestBuilder.copySourceSSECustomerKeyMD5(source.sseCustomerKeyMD5());
+    if (source.getExpirationTimeRuleId() != null) {
+      dest.setExpirationTimeRuleId(source.getExpirationTimeRuleId());
+    }
+    if (source.getHttpExpiresDate() != null) {
+      dest.setHttpExpiresDate(source.getHttpExpiresDate());
+    }
+    if (source.getLastModified() != null) {
+      dest.setLastModified(source.getLastModified());
+    }
+    if (source.getOngoingRestore() != null) {
+      dest.setOngoingRestore(source.getOngoingRestore());
+    }
+    if (source.getRestoreExpirationTime() != null) {
+      dest.setRestoreExpirationTime(source.getRestoreExpirationTime());
+    }
+    if (source.getSSEAlgorithm() != null) {
+      dest.setSSEAlgorithm(source.getSSEAlgorithm());
+    }
+    if (source.getSSECustomerAlgorithm() != null) {
+      dest.setSSECustomerAlgorithm(source.getSSECustomerAlgorithm());
+    }
+    if (source.getSSECustomerKeyMd5() != null) {
+      dest.setSSECustomerKeyMd5(source.getSSECustomerKeyMd5());
     }
 
     // copy user metadata except the magic marker header.
-    source.metadata().entrySet().stream()
+    source.getUserMetadata().entrySet().stream()
         .filter(e -> !e.getKey().equals(X_HEADER_MAGIC_MARKER))
-        .forEach(e -> dest.put(e.getKey(), e.getValue()));
+        .forEach(e -> dest.addUserMetadata(e.getKey(), e.getValue()));
   }
 
   public interface HeaderProcessingCallbacks {
@@ -544,15 +529,6 @@ public class HeaderProcessing extends AbstractStoreOperation {
      * @throws IOException IO and object access problems.
      */
     @Retries.RetryTranslated
-    HeadObjectResponse getObjectMetadata(String key) throws IOException;
-
-    /**
-     * Retrieve the bucket metadata.
-     *
-     * @return metadata
-     * @throws IOException IO and object access problems.
-     */
-    @Retries.RetryTranslated
-    HeadBucketResponse getBucketMetadata() throws IOException;
+    ObjectMetadata getObjectMetadata(String key) throws IOException;
   }
 }

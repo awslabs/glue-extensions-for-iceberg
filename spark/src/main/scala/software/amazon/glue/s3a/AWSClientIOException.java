@@ -15,28 +15,28 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.core.exception.SdkException;
-import org.apache.hadoop.util.Preconditions;
-
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.SdkBaseException;
 import java.io.IOException;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 
 /**
- * IOException equivalent of an {@link SdkException}.
+ * IOException equivalent of an {@link AmazonClientException}.
  */
 public class AWSClientIOException extends IOException {
 
   private final String operation;
 
   public AWSClientIOException(String operation,
-      SdkException cause) {
+      SdkBaseException cause) {
     super(cause);
     Preconditions.checkArgument(operation != null, "Null 'operation' argument");
     Preconditions.checkArgument(cause != null, "Null 'cause' argument");
     this.operation = operation;
   }
 
-  public SdkException getCause() {
-    return (SdkException) super.getCause();
+  public AmazonClientException getCause() {
+    return (AmazonClientException) super.getCause();
   }
 
   @Override
@@ -44,11 +44,4 @@ public class AWSClientIOException extends IOException {
     return operation + ": " + getCause().getMessage();
   }
 
-  /**
-   * Query inner cause for retryability.
-   * @return what the cause says.
-   */
-  public boolean retryable() {
-    return getCause().retryable();
-  }
 }

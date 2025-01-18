@@ -15,15 +15,14 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.SESSION_TOKEN_KIND;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.net.URI;
-
 import software.amazon.glue.s3a.auth.MarshalledCredentials;
 import org.apache.hadoop.io.Text;
-
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.SESSION_TOKEN_KIND;
 
 /**
  * A token identifier which contains a set of AWS session credentials,

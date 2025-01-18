@@ -15,17 +15,16 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static software.amazon.glue.s3a.auth.MarshalledCredentialBinding.fromSTSCredentials;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_CREDENTIALS_PROVIDER;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_ROLE_ARN;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.E_NO_SESSION_TOKENS_FOR_ROLE_BINDING;
+
+import com.amazonaws.services.securitytoken.model.Credentials;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-
-import software.amazon.awssdk.services.sts.model.Credentials;
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.util.Preconditions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.AWSCredentialProviderList;
 import software.amazon.glue.s3a.Retries;
@@ -34,11 +33,10 @@ import software.amazon.glue.s3a.auth.MarshalledCredentials;
 import software.amazon.glue.s3a.auth.RoleModel;
 import software.amazon.glue.s3a.auth.STSClientFactory;
 import org.apache.hadoop.io.Text;
-
-import static software.amazon.glue.s3a.auth.MarshalledCredentialBinding.fromSTSCredentials;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_CREDENTIALS_PROVIDER;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_ROLE_ARN;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.E_NO_SESSION_TOKENS_FOR_ROLE_BINDING;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Role Token support requests an explicit role and automatically restricts

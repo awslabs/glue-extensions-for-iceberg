@@ -15,25 +15,21 @@
 
 package software.amazon.glue.s3a.impl;
 
-import java.util.List;
-
-import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import software.amazon.glue.s3a.AWSClientIOException;
-import software.amazon.glue.s3a.S3AStorageStatistics;
-import software.amazon.glue.s3a.Statistic;
-import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
-
-
 import static software.amazon.glue.s3a.S3AUtils.isThrottleException;
 import static software.amazon.glue.s3a.Statistic.IGNORED_ERRORS;
 import static software.amazon.glue.s3a.Statistic.STORE_IO_THROTTLED;
 import static software.amazon.glue.s3a.Statistic.STORE_IO_THROTTLE_RATE;
 import static software.amazon.glue.s3a.impl.InternalConstants.THROTTLE_LOG_NAME;
+
+import com.amazonaws.SdkClientException;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import java.util.List;
+import software.amazon.glue.s3a.AWSClientIOException;
+import software.amazon.glue.s3a.S3AStorageStatistics;
+import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Handler for bulk delete retry events.
@@ -112,15 +108,15 @@ public class BulkDeleteRetryHandler extends AbstractStoreOperation {
    * @param deleteRequest request which failed.
    */
   private void onDeleteThrottled(final DeleteObjectsRequest deleteRequest) {
-    final List<ObjectIdentifier> keys = deleteRequest.delete().objects();
+    final List<DeleteObjectsRequest.KeyVersion> keys = deleteRequest.getKeys();
     final int size = keys.size();
     incrementStatistic(STORE_IO_THROTTLED, size);
     instrumentation.addValueToQuantiles(STORE_IO_THROTTLE_RATE, size);
     THROTTLE_LOG.info(
         "Bulk delete {} keys throttled -first key = {}; last = {}",
         size,
-        keys.get(0).key(),
-        keys.get(size - 1).key());
+        keys.get(0).getKey(),
+        keys.get(size - 1).getKey());
   }
 
   /**

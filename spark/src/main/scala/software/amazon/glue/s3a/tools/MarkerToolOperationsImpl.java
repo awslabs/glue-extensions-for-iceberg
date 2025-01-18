@@ -15,18 +15,17 @@
 
 package software.amazon.glue.s3a.tools;
 
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.DeleteObjectsResult;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import java.io.IOException;
 import java.util.List;
-
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import software.amazon.glue.s3a.S3AFileStatus;
-import software.amazon.glue.s3a.impl.MultiObjectDeleteException;
 import software.amazon.glue.s3a.impl.OperationCallbacks;
-
+import software.amazon.glue.s3a.s3guard.BulkOperationState;
 
 /**
  * Implement the marker tool operations by forwarding to the
@@ -52,12 +51,15 @@ public class MarkerToolOperationsImpl implements MarkerToolOperations {
   }
 
   @Override
-  public void removeKeys(
-      final List<ObjectIdentifier> keysToDelete,
-      final boolean deleteFakeDir)
-      throws MultiObjectDeleteException, AwsServiceException, IOException {
-    operationCallbacks.removeKeys(keysToDelete, deleteFakeDir
-    );
+  public DeleteObjectsResult removeKeys(
+      final List<DeleteObjectsRequest.KeyVersion> keysToDelete,
+      final boolean deleteFakeDir,
+      final List<Path> undeletedObjectsOnFailure,
+      final BulkOperationState operationState,
+      final boolean quiet)
+      throws MultiObjectDeleteException, AmazonClientException, IOException {
+    return operationCallbacks.removeKeys(keysToDelete, deleteFakeDir,
+        undeletedObjectsOnFailure, operationState, quiet);
   }
 
 }

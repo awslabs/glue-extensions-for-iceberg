@@ -17,7 +17,7 @@
  * Persistent data formats for the committers.
  *
  * All of these formats share a base class of
- * {@link org.apache.hadoop.fs.s3a.commit.files.PersistentCommitData};
+ * {@link software.amazon.glue.s3a.commit.files.PersistentCommitData};
  * the subclasses record
  * <ol>
  *   <li>The content of a single pending commit
@@ -26,11 +26,12 @@
  *   <li>The summary information saved in the {@code _SUCCESS} file.</li>
  * </ol>
  *
+ * There are no guarantees of stability between versions; these are internal
+ * structures.
  *
- * The {@link org.apache.hadoop.fs.s3a.commit.files.SuccessData} file is
- * the one visible to callers after a job completes; it is compatible with
- * the manifest committer format persisted in
- * {@code org.apache.hadoop.mapreduce.lib.output.committer.manifest.files.ManifestSuccessData}
+ * The {@link software.amazon.glue.s3a.commit.files.SuccessData} file is
+ * the one visible to callers after a job completes; it is an unstable
+ * manifest intended for testing only.
  *
  */
 @InterfaceAudience.Private

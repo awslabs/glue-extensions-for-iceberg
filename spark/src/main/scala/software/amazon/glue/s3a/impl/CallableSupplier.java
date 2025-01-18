@@ -15,25 +15,22 @@
 
 package software.amazon.glue.s3a.impl;
 
-import javax.annotation.Nullable;
+import static org.apache.hadoop.fs.impl.FutureIOSupport.raiseInnerCause;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.fs.store.audit.AuditSpan;
 import org.apache.hadoop.util.DurationInfo;
-
-import static org.apache.hadoop.util.functional.FutureIO.raiseInnerCause;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A bridge from Callable to Supplier; catching exceptions
@@ -153,21 +150,19 @@ public final class CallableSupplier<T> implements Supplier<T> {
    * Wait for a single of future to complete, extracting IOEs afterwards.
    * @param future future to wait for.
    * @param <T> type
-   * @return the result
    * @throws IOException if one of the called futures raised an IOE.
    * @throws RuntimeException if one of the futures raised one.
    */
-  public static <T> T waitForCompletion(
+  public static <T> void waitForCompletion(
       final CompletableFuture<T> future)
       throws IOException {
     try (DurationInfo ignore =
             new DurationInfo(LOG, false, "Waiting for task completion")) {
-      return future.join();
+      future.join();
     } catch (CancellationException e) {
       throw new IOException(e);
     } catch (CompletionException e) {
       raiseInnerCause(e);
-      return null;
     }
   }
 
@@ -175,35 +170,31 @@ public final class CallableSupplier<T> implements Supplier<T> {
    * Wait for a single of future to complete, ignoring exceptions raised.
    * @param future future to wait for.
    * @param <T> type
-   * @return the outcome if successfully retrieved.
    */
-  public static <T> Optional<T> waitForCompletionIgnoringExceptions(
+  public static <T> void waitForCompletionIgnoringExceptions(
       @Nullable final CompletableFuture<T> future) {
-
-    try {
-      return maybeAwaitCompletion(future);
-    } catch (Exception e) {
-      LOG.debug("Ignoring exception raised in task completion: ", e);
-      return Optional.empty();
+    if (future != null) {
+      try (DurationInfo ignore =
+               new DurationInfo(LOG, false, "Waiting for task completion")) {
+        future.join();
+      } catch (Exception e) {
+        LOG.debug("Ignoring exception raised in task completion: ");
+      }
     }
   }
 
   /**
    * Block awaiting completion for any non-null future passed in;
    * No-op if a null arg was supplied.
-   * @param <T> return type
    * @param future future
-   * @return the outcome; is empty if the future was null/had no return value
    * @throws IOException if one of the called futures raised an IOE.
    * @throws RuntimeException if one of the futures raised one.
    */
-  public static <T> Optional<T> maybeAwaitCompletion(
-      @Nullable final CompletableFuture<T> future)
+  public static void maybeAwaitCompletion(
+      @Nullable final CompletableFuture<Void> future)
       throws IOException {
     if (future != null) {
-      return Optional.ofNullable(waitForCompletion(future));
-    } else {
-      return Optional.empty();
+      waitForCompletion(future);
     }
   }
 }

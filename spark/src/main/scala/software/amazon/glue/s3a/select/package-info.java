@@ -14,12 +14,7 @@
  */
 
 /**
- * Was the location for support for S3 Select.
- * Now removed apart from some constants.f
- * There was a class {@code BlockingEnumeration} which
- * mapped SdkPublisher to an Enumeration.
- * This may be of use elsewhere; it can be retrieved from
- * hadoop commit 8bf72346a59c.
+ * Support for S3 Select.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable

@@ -15,8 +15,6 @@
 
 package software.amazon.glue.s3a.statistics;
 
-import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
-
 /**
  * Statistics for S3A committers.
  */
@@ -62,10 +60,4 @@ public interface CommitterStatistics
    * @param success success flag
    */
   void jobCompleted(boolean success);
-
-  /**
-   * Return the writeable IOStatisticsStore.
-   * @return the statistics
-   */
-  IOStatisticsStore getIOStatistics();
 }

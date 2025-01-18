@@ -15,13 +15,13 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.services.s3.model.S3Exception;
-
+import com.amazonaws.services.s3.model.AmazonS3Exception;
+import java.util.Map;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
 /**
- * Wrap a {@link S3Exception} as an IOE, relaying all
+ * Wrap a {@link AmazonS3Exception} as an IOE, relaying all
  * getters.
  */
 @InterfaceAudience.Public
@@ -34,12 +34,24 @@ public class AWSS3IOException extends AWSServiceIOException {
    * @param cause the underlying cause
    */
   public AWSS3IOException(String operation,
-      S3Exception cause) {
+      AmazonS3Exception cause) {
     super(operation, cause);
   }
 
-  public S3Exception getCause() {
-    return (S3Exception) super.getCause();
+  public AmazonS3Exception getCause() {
+    return (AmazonS3Exception) super.getCause();
+  }
+
+  public String getErrorResponseXml() {
+    return getCause().getErrorResponseXml();
+  }
+
+  public Map<String, String> getAdditionalDetails() {
+    return getCause().getAdditionalDetails();
+  }
+
+  public String getExtendedRequestId() {
+    return getCause().getExtendedRequestId();
   }
 
 }

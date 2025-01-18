@@ -15,13 +15,12 @@
 
 package software.amazon.glue.s3a.audit.impl;
 
-import javax.annotation.Nullable;
+import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
 
+import javax.annotation.Nullable;
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.audit.AuditSpanS3A;
 import software.amazon.glue.s3a.audit.OperationAuditorOptions;
-
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
 
 /**
  * An audit service which returns the {@link NoopSpan}.

@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a;
 
 import java.io.IOException;
-
 import org.apache.commons.lang3.StringUtils;
 
 /**
@@ -30,14 +29,13 @@ public enum S3AEncryptionMethods {
   SSE_KMS("SSE-KMS", true, false),
   SSE_C("SSE-C", true, true),
   CSE_KMS("CSE-KMS", false, true),
-  CSE_CUSTOM("CSE-CUSTOM", false, true),
-  DSSE_KMS("DSSE-KMS", true, false);
+  CSE_CUSTOM("CSE-CUSTOM", false, true);
 
   /**
    * Error string when {@link #getMethod(String)} fails.
    * Used in tests.
    */
-  public static final String UNKNOWN_ALGORITHM
+  static final String UNKNOWN_ALGORITHM
       = "Unknown encryption algorithm ";
 
   /**

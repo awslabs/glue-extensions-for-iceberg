@@ -15,6 +15,10 @@
 
 package software.amazon.glue.s3a.impl;
 
+import static software.amazon.glue.s3a.impl.CallableSupplier.submit;
+import static software.amazon.glue.s3a.impl.CallableSupplier.waitForCompletion;
+import static org.apache.hadoop.fs.store.audit.AuditingFunctions.callableWithinAuditSpan;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -31,11 +35,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.CompletableFuture;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.commons.collections4.comparators.ReverseComparator;
+import org.apache.commons.collections.comparators.ReverseComparator;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.LocatedFileStatus;
@@ -47,10 +47,8 @@ import software.amazon.glue.s3a.Retries;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
-
-import static software.amazon.glue.s3a.impl.CallableSupplier.submit;
-import static software.amazon.glue.s3a.impl.CallableSupplier.waitForCompletion;
-import static org.apache.hadoop.fs.store.audit.AuditingFunctions.callableWithinAuditSpan;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Implementation of CopyFromLocalOperation.
@@ -127,7 +125,7 @@ public class CopyFromLocalOperation extends ExecutingStoreOperation<Void> {
     this.callbacks = callbacks;
     this.deleteSource = deleteSource;
     this.overwrite = overwrite;
-    this.source = source.toUri().getScheme() == null ? new Path("file://", source) : source;
+    this.source = source;
     this.destination = destination;
 
     // Capacity of 1 is a safe default for now since transfer manager can also

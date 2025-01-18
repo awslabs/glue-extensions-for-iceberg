@@ -15,25 +15,23 @@
 
 package software.amazon.glue.s3a.auth;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import static java.util.Objects.requireNonNull;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkState;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
 import org.apache.hadoop.util.JsonSerialization;
-
-import static org.apache.hadoop.util.Preconditions.checkState;
-import static java.util.Objects.requireNonNull;
 
 /**
  * Jackson Role Model for Role Properties, for API clients and tests.
@@ -42,6 +40,7 @@ import static java.util.Objects.requireNonNull;
  * don't expect to be able to parse everything.
  * It can generate simple models.
  * @see <a href="https://docs.aws.amazon.com/AmazonS3/latest/dev/s3-arn-format.html">Example S3 Policies</a>
+ * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/api-permissions-reference.html">Dynamno DB Permissions</a>
  */
 @InterfaceAudience.LimitedPrivate("Tests")
 @InterfaceStability.Unstable

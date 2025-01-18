@@ -15,9 +15,8 @@
 
 package software.amazon.glue.s3a.impl;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
-
+import javax.annotation.Nonnull;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.impl.MultipartUploaderBuilderImpl;
 import software.amazon.glue.s3a.S3AFileSystem;

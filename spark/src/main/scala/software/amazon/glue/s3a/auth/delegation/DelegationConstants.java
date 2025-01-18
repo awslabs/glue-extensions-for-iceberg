@@ -98,7 +98,7 @@ public final class DelegationConstants {
    * Session Token binding classname: {@value}.
    */
   public static final String DELEGATION_TOKEN_SESSION_BINDING =
-      "org.apache.hadoop.fs.s3a.auth.delegation.SessionTokenBinding";
+      "software.amazon.glue.s3a.auth.delegation.SessionTokenBinding";
 
   /**
    * Default token binding {@value}.
@@ -109,13 +109,13 @@ public final class DelegationConstants {
    * Token binding to pass full credentials: {@value}.
    */
   public static final String DELEGATION_TOKEN_FULL_CREDENTIALS_BINDING =
-      "org.apache.hadoop.fs.s3a.auth.delegation.FullCredentialsTokenBinding";
+      "software.amazon.glue.s3a.auth.delegation.FullCredentialsTokenBinding";
 
   /**
    * Role DTs: {@value}.
    */
   public static final String DELEGATION_TOKEN_ROLE_BINDING =
-      "org.apache.hadoop.fs.s3a.auth.delegation.RoleTokenBinding";
+      "software.amazon.glue.s3a.auth.delegation.RoleTokenBinding";
 
   /** Prefix for token names: {@value}. */
   public static final String TOKEN_NAME_PREFIX = "S3ADelegationToken/";

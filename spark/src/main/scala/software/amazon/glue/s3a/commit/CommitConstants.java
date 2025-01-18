@@ -15,10 +15,11 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.Constants.XA_HEADER_PREFIX;
+import static org.apache.hadoop.mapreduce.lib.output.PathOutputCommitterFactory.COMMITTER_FACTORY_SCHEME_PATTERN;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-
-import static software.amazon.glue.s3a.Constants.XA_HEADER_PREFIX;
 
 /**
  * Constants for working with committers.
@@ -36,8 +37,6 @@ public final class CommitConstants {
    * {@value}.
    */
   public static final String MAGIC = "__magic";
-  public static final String JOB_ID_PREFIX = "job-";
-  public static final String MAGIC_PATH_PREFIX = MAGIC + "_" + JOB_ID_PREFIX;
 
   /**
    * Marker of the start of a directory tree for calculating
@@ -54,16 +53,6 @@ public final class CommitConstants {
    * Suffix applied to multiple pending commit metadata: {@value}.
    */
   public static final String PENDINGSET_SUFFIX = ".pendingset";
-
-  /**
-   * Etag name to be returned on non-committed S3 object: {@value}.
-   */
-  public static final String MAGIC_COMMITTER_PENDING_OBJECT_ETAG_NAME = "pending";
-
-  /**
-   * Prefix to use for config options: {@value}.
-   */
-  public static final String OPT_PREFIX = "fs.s3a.committer.";
 
   /**
    * Flag to indicate whether support for the Magic committer is enabled
@@ -129,8 +118,9 @@ public final class CommitConstants {
 
   /**
    * Temp data which is not auto-committed: {@value}.
+   * Uses a different name from normal just to make clear it is different.
    */
-  public static final String TEMP_DATA = TEMPORARY;
+  public static final String TEMP_DATA = "__temp-data";
 
 
   /**
@@ -151,7 +141,7 @@ public final class CommitConstants {
    * Key to set for the S3A schema to use the specific committer.
    */
   public static final String S3A_COMMITTER_FACTORY_KEY = String.format(
-      "mapreduce.outputcommitter.factory.scheme.s3a");
+      COMMITTER_FACTORY_SCHEME_PATTERN, "s3a");
 
   /**
    * S3 Committer factory: {@value}.
@@ -229,31 +219,13 @@ public final class CommitConstants {
   /**
    * Number of threads in committers for parallel operations on files
    * (upload, commit, abort, delete...): {@value}.
-   * Two thread pools this size are created, one for the outer
-   * task-level parallelism, and one for parallel execution
-   * within tasks (POSTs to commit individual uploads)
-   * If the value is negative, it is inverted and then multiplied
-   * by the number of cores in the CPU.
    */
   public static final String FS_S3A_COMMITTER_THREADS =
       "fs.s3a.committer.threads";
-
   /**
    * Default value for {@link #FS_S3A_COMMITTER_THREADS}: {@value}.
    */
-  public static final int DEFAULT_COMMITTER_THREADS = 32;
-
-  /**
-   * Should Magic committer track all the pending commits in memory?
-   */
-  public static final String FS_S3A_COMMITTER_MAGIC_TRACK_COMMITS_IN_MEMORY_ENABLED =
-      "fs.s3a.committer.magic.track.commits.in.memory.enabled";
-
-  /**
-   * Default value for {@link #FS_S3A_COMMITTER_MAGIC_TRACK_COMMITS_IN_MEMORY_ENABLED}: {@value}.
-   */
-  public static final boolean FS_S3A_COMMITTER_MAGIC_TRACK_COMMITS_IN_MEMORY_ENABLED_DEFAULT =
-      false;
+  public static final int DEFAULT_COMMITTER_THREADS = 8;
 
   /**
    * Path  in the cluster filesystem for temporary data: {@value}.
@@ -295,12 +267,10 @@ public final class CommitConstants {
   /**
    * Default configuration value for
    * {@link #FS_S3A_COMMITTER_ABORT_PENDING_UPLOADS}.
-   * It is disabled by default to support concurrent writes on the same
-   * parent directory but different partition/sub directory.
    * Value: {@value}.
    */
   public static final boolean DEFAULT_FS_S3A_COMMITTER_ABORT_PENDING_UPLOADS =
-      false;
+      true;
 
   /**
    * The limit to the number of committed objects tracked during
@@ -356,39 +326,5 @@ public final class CommitConstants {
    */
   public static final String XA_MAGIC_MARKER = XA_HEADER_PREFIX
       + X_HEADER_MAGIC_MARKER;
-
-  /**
-   * Task Attempt ID query header: {@value}.
-   */
-  public static final String PARAM_TASK_ATTEMPT_ID = "ta";
-
-  /**
-   * Directory for saving job summary reports.
-   * These are the _SUCCESS files, but are saved even on
-   * job failures.
-   * Value: {@value}.
-   */
-  public static final String OPT_SUMMARY_REPORT_DIR =
-      OPT_PREFIX + "summary.report.directory";
-
-  /**
-   * Experimental feature to collect thread level IO statistics.
-   * When set the committers will reset the statistics in
-   * task setup and propagate to the job committer.
-   * The job comitter will include those and its own statistics.
-   * Do not use if the execution engine is collecting statistics,
-   * as the multiple reset() operations will result in incomplete
-   * statistics.
-   * Value: {@value}.
-   */
-  public static final String S3A_COMMITTER_EXPERIMENTAL_COLLECT_IOSTATISTICS =
-      OPT_PREFIX + "experimental.collect.iostatistics";
-
-  /**
-   * Default value for {@link #S3A_COMMITTER_EXPERIMENTAL_COLLECT_IOSTATISTICS}.
-   * Value: {@value}.
-   */
-  public static final boolean S3A_COMMITTER_EXPERIMENTAL_COLLECT_IOSTATISTICS_DEFAULT =
-      false;
 
 }

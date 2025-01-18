@@ -15,11 +15,11 @@
 
 package software.amazon.glue.s3a.audit.impl;
 
+import static java.util.Objects.requireNonNull;
+
 import software.amazon.glue.s3a.audit.AuditSpanS3A;
 import org.apache.hadoop.fs.store.audit.AuditSpan;
 import org.apache.hadoop.util.Time;
-
-import static java.util.Objects.requireNonNull;
 
 /**
  * Base class for the audit spans implementations..

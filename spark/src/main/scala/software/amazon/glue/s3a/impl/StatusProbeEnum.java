@@ -17,7 +17,6 @@ package software.amazon.glue.s3a.impl;
 
 import java.util.EnumSet;
 import java.util.Set;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 
 /**

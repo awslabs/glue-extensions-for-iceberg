@@ -15,18 +15,16 @@
 
 package software.amazon.glue.s3a.auth;
 
+import static software.amazon.glue.s3a.auth.MarshalledCredentialBinding.toAWSCredentials;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkNotNull;
+
+import com.amazonaws.auth.AWSCredentials;
 import java.io.IOException;
 import java.net.URI;
-
-import software.amazon.awssdk.auth.credentials.AwsCredentials;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.CredentialInitializationException;
-
-import static org.apache.hadoop.util.Preconditions.checkNotNull;
-import static software.amazon.glue.s3a.auth.MarshalledCredentialBinding.toAWSCredentials;
 
 /**
  * AWS credential provider driven from marshalled session/full credentials
@@ -42,7 +40,7 @@ public class MarshalledCredentialProvider extends
 
   /** Name: {@value}. */
   public static final String NAME
-      = "org.apache.hadoop.fs.s3a.auth.MarshalledCredentialProvider";
+      = "software.amazon.glue.s3a.auth.MarshalledCredentialProvider";
 
   private final MarshalledCredentials credentials;
 
@@ -81,7 +79,7 @@ public class MarshalledCredentialProvider extends
    * @throws IOException on a failure
    */
   @Override
-  protected AwsCredentials createCredentials(final Configuration config)
+  protected AWSCredentials createCredentials(final Configuration config)
       throws IOException {
     return toAWSCredentials(credentials, typeRequired, component);
   }

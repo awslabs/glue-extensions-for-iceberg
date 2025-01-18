@@ -21,28 +21,26 @@ import java.net.URI;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
-
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.impl.FlagSet;
-import software.amazon.glue.s3a.api.PerformanceFlagEnum;
-import software.amazon.glue.s3a.api.RequestFactory;
-import software.amazon.glue.s3a.audit.AuditSpanS3A;
 import software.amazon.glue.s3a.Invoker;
 import software.amazon.glue.s3a.S3AFileStatus;
 import software.amazon.glue.s3a.S3AInputPolicy;
 import software.amazon.glue.s3a.S3AStorageStatistics;
 import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.api.RequestFactory;
+import software.amazon.glue.s3a.audit.AuditSpanS3A;
+import software.amazon.glue.s3a.s3guard.ITtlTimeProvider;
+import software.amazon.glue.s3a.s3guard.MetadataStore;
 import software.amazon.glue.s3a.statistics.S3AStatisticsContext;
 import org.apache.hadoop.fs.store.audit.ActiveThreadSpanSource;
 import org.apache.hadoop.fs.store.audit.AuditSpan;
 import org.apache.hadoop.fs.store.audit.AuditSpanSource;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.util.LambdaUtils;
 import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 
@@ -56,7 +54,7 @@ import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
  * their own.
  *
  * <i>Warning:</i> this really is private and unstable. Do not use
- * outside the org.apache.hadoop.fs.s3a package, or in extension points
+ * outside the software.amazon.glue.s3a package, or in extension points
  * such as DelegationTokens.
  */
 @InterfaceAudience.LimitedPrivate("S3A Filesystem and extensions")
@@ -108,18 +106,26 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
   /** List algorithm. */
   private final boolean useListV1;
 
+  /**
+   * To allow this context to be passed down to the metastore, this field
+   * wll be null until initialized.
+   */
+  private final MetadataStore metadataStore;
+
   private final ContextAccessors contextAccessors;
+
+  /**
+   * Source of time.
+   */
+
+  /** Time source for S3Guard TTLs. */
+  private final ITtlTimeProvider timeProvider;
 
   /** Operation Auditor. */
   private final AuditSpanSource<AuditSpanS3A> auditor;
 
   /** Is client side encryption enabled? */
   private final boolean isCSEEnabled;
-
-  /**
-   * Performance flags.
-   */
-  private final FlagSet<PerformanceFlagEnum> performanceFlags;
 
   /**
    * Instantiate.
@@ -138,11 +144,12 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
       final S3AInputPolicy inputPolicy,
       final ChangeDetectionPolicy changeDetectionPolicy,
       final boolean multiObjectDeleteEnabled,
+      final MetadataStore metadataStore,
       final boolean useListV1,
       final ContextAccessors contextAccessors,
+      final ITtlTimeProvider timeProvider,
       final AuditSpanSource<AuditSpanS3A> auditor,
-      final boolean isCSEEnabled,
-      final FlagSet<PerformanceFlagEnum> performanceFlags) {
+      final boolean isCSEEnabled) {
     this.fsURI = fsURI;
     this.bucket = bucket;
     this.configuration = configuration;
@@ -159,11 +166,12 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
     this.inputPolicy = inputPolicy;
     this.changeDetectionPolicy = changeDetectionPolicy;
     this.multiObjectDeleteEnabled = multiObjectDeleteEnabled;
+    this.metadataStore = metadataStore;
     this.useListV1 = useListV1;
     this.contextAccessors = contextAccessors;
+    this.timeProvider = timeProvider;
     this.auditor = auditor;
     this.isCSEEnabled = isCSEEnabled;
-    this.performanceFlags = performanceFlags;
   }
 
   public URI getFsURI() {
@@ -209,6 +217,10 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
 
   public boolean isMultiObjectDeleteEnabled() {
     return multiObjectDeleteEnabled;
+  }
+
+  public MetadataStore getMetadataStore() {
+    return metadataStore;
   }
 
   public boolean isUseListV1() {
@@ -352,6 +364,14 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
   }
 
   /**
+   * Get the time provider.
+   * @return the time source.
+   */
+  public ITtlTimeProvider getTimeProvider() {
+    return timeProvider;
+  }
+
+  /**
    * Build the full S3 key for a request from the status entry,
    * possibly adding a "/" if it represents directory and it does
    * not have a trailing slash already.
@@ -416,13 +436,5 @@ public class StoreContext implements ActiveThreadSpanSource<AuditSpan> {
    */
   public boolean isCSEEnabled() {
     return isCSEEnabled;
-  }
-
-  /**
-   * Get the performance flags.
-   * @return FlagSet containing the performance flags.
-   */
-  public FlagSet<PerformanceFlagEnum> getPerformanceFlags() {
-    return performanceFlags;
   }
 }

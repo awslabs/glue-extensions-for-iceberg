@@ -19,17 +19,13 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.AccessDeniedException;
 import java.util.Set;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.Retries;
 import software.amazon.glue.s3a.S3AFileStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The mkdir operation.
@@ -40,67 +36,23 @@ import software.amazon.glue.s3a.S3AFileStatus;
  * It performs the directory listing probe ahead of the simple object HEAD
  * call for this reason -the object is the failure mode which SHOULD NOT
  * be encountered on normal execution.
- *
- * Magic paths are handled specially
- * <ul>
- *   <li>The only path check is for a directory already existing there.</li>
- *   <li>No ancestors are checked</li>
- *   <li>Parent markers are never deleted, irrespective of FS settings</li>
- * </ul>
- * As a result, irrespective of depth, the operations performed are only
- * <ol>
- *   <li>One LIST</li>
- *   <li>If needed, one PUT</li>
- * </ol>
  */
-@InterfaceAudience.Private
-@InterfaceStability.Evolving
 public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
 
   private static final Logger LOG = LoggerFactory.getLogger(
       MkdirOperation.class);
 
-  /**
-   * Path of the directory to be created.
-   */
   private final Path dir;
 
-  /**
-   * Mkdir Callbacks object to be used by the Mkdir operation.
-   */
   private final MkdirCallbacks callbacks;
 
-  /**
-   * Whether to skip the validation of the parent directory.
-   */
-  private final boolean performanceMkdir;
-
-  /**
-   * Whether the path is magic commit path.
-   */
-  private final boolean isMagicPath;
-
-  /**
-   * Initialize Mkdir Operation context for S3A.
-   *
-   * @param storeContext Store context.
-   * @param dir Dir path of the directory.
-   * @param callbacks MkdirCallbacks object used by the Mkdir operation.
-   * @param isMagicPath True if the path is magic commit path.
-   * @param performanceMkdir If true, skip validation of the parent directory
-   * structure.
-   */
   public MkdirOperation(
       final StoreContext storeContext,
       final Path dir,
-      final MkdirCallbacks callbacks,
-      final boolean isMagicPath,
-      final boolean performanceMkdir) {
+      final MkdirCallbacks callbacks) {
     super(storeContext);
     this.dir = dir;
     this.callbacks = callbacks;
-    this.isMagicPath = isMagicPath;
-    this.performanceMkdir = performanceMkdir;
   }
 
   /**
@@ -120,14 +72,6 @@ public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
       return true;
     }
 
-    // get the file status of the path.
-    // this is done even for a magic path, to avoid always  issuing PUT
-    // requests. Doing that without a check wouild seem to be an
-    // optimization, but it is not because
-    // 1. PUT is slower than HEAD
-    // 2. Write capacity is less than read capacity on a shard
-    // 3. It adds needless entries in versioned buckets, slowing
-    //    down subsequent operations.
     FileStatus fileStatus = getPathStatusExpectingDir(dir);
     if (fileStatus != null) {
       if (fileStatus.isDirectory()) {
@@ -136,43 +80,8 @@ public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
         throw new FileAlreadyExistsException("Path is a file: " + dir);
       }
     }
-    // file status was null
-
-    // is the path magic?
-    // If so, we declare success without looking any further
-    if (isMagicPath) {
-      // Create the marker file immediately,
-      // and don't delete markers
-      callbacks.createFakeDirectory(dir, true);
-      return true;
-    }
-
-    // if performance creation mode is set, no need to check
-    // whether the closest ancestor is dir.
-    if (!performanceMkdir) {
-      verifyFileStatusOfClosestAncestor();
-    }
-
-    // if we get here there is no directory at the destination.
-    // so create one.
-
-    // Create the marker file, delete the parent entries
-    // if the filesystem isn't configured to retain them
-    callbacks.createFakeDirectory(dir, false);
-    return true;
-  }
-
-  /**
-   * Verify the file status of the closest ancestor, if it is
-   * dir, the mkdir operation should proceed. If it is file,
-   * the mkdir operation should throw error.
-   *
-   * @throws IOException If either file status could not be retrieved,
-   * or if the closest ancestor is a file.
-   */
-  private void verifyFileStatusOfClosestAncestor() throws IOException {
-    FileStatus fileStatus;
-    // Walk path to root, ensuring the closest ancestor is a directory, not file
+    // dir, walk up tree
+    // Walk path to root, ensuring closest ancestor is a directory, not file
     Path fPart = dir.getParent();
     try {
       while (fPart != null && !fPart.isRoot()) {
@@ -188,18 +97,24 @@ public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
         }
 
         // there's a file at the parent entry
-        throw new FileAlreadyExistsException(
-            String.format(
-                "Can't make directory for path '%s' since it is a file.",
-                fPart));
+        throw new FileAlreadyExistsException(String.format(
+            "Can't make directory for path '%s' since it is a file.",
+            fPart));
       }
     } catch (AccessDeniedException e) {
       LOG.info("mkdirs({}}: Access denied when looking"
               + " for parent directory {}; skipping checks",
-          dir,
-          fPart);
-      LOG.debug("{}", e, e);
+          dir, fPart);
+      LOG.debug("{}", e.toString(), e);
     }
+
+    // if we get here there is no directory at the destination.
+    // so create one.
+    String key = getStoreContext().pathToKey(dir);
+    // this will create the marker file, delete the parent entries
+    // and update S3Guard
+    callbacks.createFakeDirectory(key);
+    return true;
   }
 
   /**
@@ -221,21 +136,15 @@ public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
   /**
    * Get the status of a path -optimized for paths
    * where there is a directory marker or child entries.
-   *
-   * Under a magic path, there's no check for a file,
-   * just the listing.
-   *
    * @param path path to probe.
-   *
    * @return the status
-   *
    * @throws IOException failure
    */
   private S3AFileStatus getPathStatusExpectingDir(final Path path)
       throws IOException {
     S3AFileStatus status = probePathStatusOrNull(path,
         StatusProbeEnum.DIRECTORIES);
-    if (status == null && !isMagicPath) {
+    if (status == null) {
       status = probePathStatusOrNull(path,
           StatusProbeEnum.FILE);
     }
@@ -261,15 +170,10 @@ public class MkdirOperation extends ExecutingStoreOperation<Boolean> {
     /**
      * Create a fake directory, always ending in "/".
      * Retry policy: retrying; translated.
-     * the keepMarkers flag controls whether or not markers
-     * are automatically kept (this is set when creating
-     * directories under a magic path, always)
-     * @param dir dir to create
-     * @param keepMarkers always keep markers
-     *
+     * @param key name of directory object.
      * @throws IOException IO failure
      */
     @Retries.RetryTranslated
-    void createFakeDirectory(Path dir, boolean keepMarkers) throws IOException;
+    void createFakeDirectory(String key) throws IOException;
   }
 }

@@ -15,14 +15,13 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static java.util.Objects.requireNonNull;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DURATION_LOG_AT_INFO;
+
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Optional;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.AWSCredentialProviderList;
 import software.amazon.glue.s3a.auth.RoleModel;
@@ -30,9 +29,8 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.token.SecretManager;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.DurationInfo;
-
-import static java.util.Objects.requireNonNull;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DURATION_LOG_AT_INFO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *  An AbstractDelegationTokenBinding implementation is a class which
@@ -51,7 +49,7 @@ import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DURAT
  *  instance which created it --which itself follows the lifecycle of the FS.
  *
  *  One big difference is that
- *  {@link AbstractDTService#bindToFileSystem(URI, org.apache.hadoop.fs.s3a.impl.StoreContext, DelegationOperations)}
+ *  {@link AbstractDTService#bindToFileSystem(URI, software.amazon.glue.s3a.impl.StoreContext, DelegationOperations)}
  *  will be called
  *  before the {@link #init(Configuration)} operation, this is where
  *  the owning FS is passed in.
@@ -196,51 +194,26 @@ public abstract class AbstractDelegationTokenBinding extends AbstractDTService {
   }
 
   /**
-   * Deploy, returning the binding information.
-   * The base implementation calls
-   *
-   * @param retrievedIdentifier any identifier -null if deployed unbonded.
-   * @return binding information
-   * @throws IOException any failure.
-   */
-  public DelegationBindingInfo deploy(AbstractS3ATokenIdentifier retrievedIdentifier)
-        throws IOException {
-    requireServiceStarted();
-    AWSCredentialProviderList credentialProviders =
-        retrievedIdentifier == null
-            ? deployUnbonded()
-            : bindToTokenIdentifier(retrievedIdentifier);
-    return new DelegationBindingInfo()
-        .withCredentialProviders(credentialProviders);
-  }
-
-  /**
    * Perform any actions when deploying unbonded, and return a list
    * of credential providers.
    * @return non-empty list of AWS credential providers to use for
    * authenticating this client with AWS services.
    * @throws IOException any failure.
-   * @throws UnsupportedOperationException in the base implementation.
    */
-  public AWSCredentialProviderList deployUnbonded()
-      throws IOException {
-    throw new UnsupportedOperationException("unimplemented");
-  }
+  public abstract AWSCredentialProviderList deployUnbonded()
+      throws IOException;
 
   /**
    * Bind to the token identifier, returning the credential providers to use
-   * for the owner to talk to S3 and related AWS Services.
+   * for the owner to talk to S3, DDB and related AWS Services.
    * @param retrievedIdentifier the unmarshalled data
    * @return non-empty list of AWS credential providers to use for
    * authenticating this client with AWS services.
-   * @throws IOException any failure
-   * @throws UnsupportedOperationException in the base implementation.
+   * @throws IOException any failure.
    */
-  public AWSCredentialProviderList bindToTokenIdentifier(
+  public abstract AWSCredentialProviderList bindToTokenIdentifier(
       AbstractS3ATokenIdentifier retrievedIdentifier)
-      throws IOException  {
-    throw new UnsupportedOperationException("unimplemented");
-  }
+      throws IOException;
 
   /**
    * Create a new subclass of {@link AbstractS3ATokenIdentifier}.
@@ -301,7 +274,7 @@ public abstract class AbstractDelegationTokenBinding extends AbstractDTService {
    * @return a password.
    */
   protected static byte[] getSecretManagerPasssword() {
-    return "non-password".getBytes(StandardCharsets.UTF_8);
+    return "non-password".getBytes(Charset.forName("UTF-8"));
   }
 
   /**
