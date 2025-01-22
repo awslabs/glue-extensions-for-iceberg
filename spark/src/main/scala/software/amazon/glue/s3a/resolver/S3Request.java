@@ -63,6 +63,7 @@ public enum S3Request {
   GetObjectAttributesRequest,
   GetObjectLegalHoldRequest,
   GetObjectLockConfigurationRequest,
+  GetObjectMetadataRequest,
   GetObjectRequest,
   GetObjectRetentionRequest,
   GetObjectTaggingRequest,

@@ -27,12 +27,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.iceberg.catalog.SessionCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.glue.auth.GlueTableCredentialsProvider;
 import software.amazon.glue.responses.LoadTableResponse;
+import software.amazon.glue.s3a.identity.FileSystemOwner;
 import software.amazon.glue.s3a.resolver.S3Call;
 import software.amazon.glue.s3a.resolver.S3CredentialsResolver;
 import software.amazon.glue.s3a.resolver.S3Resource;
@@ -55,9 +55,7 @@ public class GlueTableCredentialsResolver implements S3CredentialsResolver {
   private GlueExtensionsClient client;
   private final Cache<String, GlueTableCredentialsProvider> credsProviderCache;
 
-  public GlueTableCredentialsResolver(
-      Configuration configuration, UserGroupInformation userGroupInformation) {
-
+  public GlueTableCredentialsResolver(Configuration configuration, FileSystemOwner fileSystemOwner) {
     Map<String, String> properties = hadoopConfigToMap(configuration);
     GlueExtensionsProperties extensionsProperties = new GlueExtensionsProperties(properties);
     GlueExtensionsEndpoint endpoint = GlueExtensionsEndpoint.from(properties);

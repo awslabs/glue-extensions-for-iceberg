@@ -200,6 +200,16 @@ public class CredentialsResolverRequestFactoryImpl extends RequestFactoryImpl {
   }
 
   @Override
+  public GetObjectMetadataRequest newGetObjectMetadataRequest(String key) {
+    GetObjectMetadataRequest request = super.newGetObjectMetadataRequest(key);
+    S3Call s3Call =
+        createS3Call(
+            getScheme(), getBucket(), S3Resource.Type.OBJECT, S3Request.GetObjectMetadataRequest, key);
+    maybeAddRequestCredentialsProvider(request, s3Call);
+    return request;
+  }
+
+  @Override
   public GetObjectRequest newGetObjectRequest(String key) {
     GetObjectRequest request = super.newGetObjectRequest(key);
     S3Call s3Call =
