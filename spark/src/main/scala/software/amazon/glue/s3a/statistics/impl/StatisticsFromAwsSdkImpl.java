@@ -15,25 +15,14 @@
 
 package software.amazon.glue.s3a.statistics.impl;
 
-import java.time.Duration;
-
-import software.amazon.glue.s3a.statistics.CountersAndGauges;
-import software.amazon.glue.s3a.statistics.StatisticsFromAwsSdk;
-
 import static software.amazon.glue.s3a.Statistic.STORE_IO_REQUEST;
 import static software.amazon.glue.s3a.Statistic.STORE_IO_RETRY;
 import static software.amazon.glue.s3a.Statistic.STORE_IO_THROTTLED;
 import static software.amazon.glue.s3a.Statistic.STORE_IO_THROTTLE_RATE;
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_400_BAD_REQUEST;
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_404_NOT_FOUND;
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_429_TOO_MANY_REQUESTS_GCS;
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_500_INTERNAL_SERVER_ERROR;
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_503_SERVICE_UNAVAILABLE;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.HTTP_RESPONSE_400;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.HTTP_RESPONSE_4XX;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.HTTP_RESPONSE_500;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.HTTP_RESPONSE_503;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.HTTP_RESPONSE_5XX;
+
+import java.time.Duration;
+import software.amazon.glue.s3a.statistics.CountersAndGauges;
+import software.amazon.glue.s3a.statistics.StatisticsFromAwsSdk;
 
 /**
  * Hook up AWS SDK Statistics to the S3 counters.
@@ -91,38 +80,5 @@ public final class StatisticsFromAwsSdkImpl implements
   @Override
   public void noteResponseProcessingTime(final Duration duration) {
 
-  }
-
-  /**
-   * Map error status codes to statistic names, excluding 404.
-   * 429 (google throttle events) are mapped to the 503 statistic.
-   * @param sc status code.
-   * @return a statistic name or null.
-   */
-  public static String mapErrorStatusCodeToStatisticName(int sc) {
-    String stat = null;
-    switch (sc) {
-    case SC_400_BAD_REQUEST:
-      stat = HTTP_RESPONSE_400;
-      break;
-    case SC_404_NOT_FOUND:
-      /* do not map; not measured */
-      break;
-    case SC_500_INTERNAL_SERVER_ERROR:
-      stat = HTTP_RESPONSE_500;
-      break;
-    case SC_503_SERVICE_UNAVAILABLE:
-    case SC_429_TOO_MANY_REQUESTS_GCS:
-      stat = HTTP_RESPONSE_503;
-      break;
-
-    default:
-      if (sc > 500) {
-        stat = HTTP_RESPONSE_5XX;
-      } else if (sc > 400) {
-        stat = HTTP_RESPONSE_4XX;
-      }
-    }
-    return stat;
   }
 }

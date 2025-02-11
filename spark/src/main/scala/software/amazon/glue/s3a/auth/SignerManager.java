@@ -14,21 +14,20 @@
  */
 package software.amazon.glue.s3a.auth;
 
+import static software.amazon.glue.s3a.Constants.CUSTOM_SIGNERS;
+
+import com.amazonaws.auth.Signer;
+import com.amazonaws.auth.SignerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
-
-import software.amazon.awssdk.core.signer.Signer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.auth.delegation.DelegationTokenProvider;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.ReflectionUtils;
-
-import static software.amazon.glue.s3a.Constants.CUSTOM_SIGNERS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class to handle custom signers.
@@ -106,20 +105,17 @@ public class SignerManager implements Closeable {
     }
   }
 
-  /**
-   * Make sure the signer class is registered once with the AWS SDK.
-   * @param signerName signer name
-   * @param signerClassName classname
-   * @param conf source configuration
-   * @throws RuntimeException if the class is not found
+  /*
+   * Make sure the signer class is registered once with the AWS SDK
    */
   private static void maybeRegisterSigner(String signerName,
       String signerClassName, Configuration conf) {
-
-    if (!SignerFactory.isSignerRegistered(signerName)) {
+    try {
+      SignerFactory.getSignerByTypeAndService(signerName, null);
+    } catch (IllegalArgumentException e) {
       // Signer is not registered with the AWS SDK.
       // Load the class and register the signer.
-      Class<? extends Signer> clazz;
+      Class<? extends Signer> clazz = null;
       try {
         clazz = (Class<? extends Signer>) conf.getClassByName(signerClassName);
       } catch (ClassNotFoundException cnfe) {

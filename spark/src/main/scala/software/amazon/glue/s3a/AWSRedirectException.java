@@ -15,7 +15,8 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import com.amazonaws.AmazonServiceException;
+import software.amazon.glue.s3a.AWSServiceIOException;
 
 /**
  * Request is redirected.
@@ -29,7 +30,7 @@ public class AWSRedirectException extends AWSServiceIOException {
    * @param cause the underlying cause
    */
   public AWSRedirectException(String operation,
-      AwsServiceException cause) {
+      AmazonServiceException cause) {
     super(operation, cause);
   }
 }

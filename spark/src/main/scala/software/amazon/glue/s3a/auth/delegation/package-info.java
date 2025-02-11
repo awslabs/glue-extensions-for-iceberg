@@ -20,7 +20,7 @@
  * "pure client side" session tokens to full "Kerberos auth".
  *
  * It is intended for internal use only; any external implementation
- * of {@link org.apache.hadoop.fs.s3a.auth.delegation.AbstractDelegationTokenBinding}
+ * of {@link software.amazon.glue.s3a.auth.delegation.AbstractDelegationTokenBinding}
  * must consider this API unstable and track changes as they happen.
  */
 @InterfaceAudience.LimitedPrivate("authorization-subsystems")

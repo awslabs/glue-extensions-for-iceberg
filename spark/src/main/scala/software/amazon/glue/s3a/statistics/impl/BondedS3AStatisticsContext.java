@@ -15,13 +15,12 @@
 
 package software.amazon.glue.s3a.statistics.impl;
 
-import javax.annotation.Nullable;
-
 import java.time.Duration;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.fs.FileSystem;
 import software.amazon.glue.s3a.S3AInstrumentation;
 import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.s3guard.MetastoreInstrumentation;
 import software.amazon.glue.s3a.statistics.BlockOutputStreamStatistics;
 import software.amazon.glue.s3a.statistics.CommitterStatistics;
 import software.amazon.glue.s3a.statistics.DelegationTokenStatistics;
@@ -88,6 +87,16 @@ public class BondedS3AStatisticsContext implements S3AStatisticsContext {
    */
   private FileSystem.Statistics getInstanceStatistics() {
     return statisticsSource.getInstanceStatistics();
+  }
+
+  /**
+   * Get a MetastoreInstrumentation getInstrumentation() instance for this
+   * context.
+   * @return the S3Guard getInstrumentation() point.
+   */
+  @Override
+  public MetastoreInstrumentation getS3GuardInstrumentation() {
+    return getInstrumentation().getS3GuardInstrumentation();
   }
 
   /**

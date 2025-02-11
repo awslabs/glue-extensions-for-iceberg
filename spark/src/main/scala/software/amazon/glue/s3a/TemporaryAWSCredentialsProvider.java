@@ -15,13 +15,10 @@
 
 package software.amazon.glue.s3a;
 
-import javax.annotation.Nullable;
+import com.amazonaws.auth.AWSCredentials;
 import java.io.IOException;
-
-import software.amazon.awssdk.auth.credentials.AwsCredentials;
-
 import java.net.URI;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -40,14 +37,14 @@ import software.amazon.glue.s3a.auth.NoAwsCredentialsException;
  *
  * This credential provider must not fail in creation because that will
  * break a chain of credential providers.
- *
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class TemporaryAWSCredentialsProvider extends AbstractSessionCredentialsProvider {
+public class TemporaryAWSCredentialsProvider extends
+    AbstractSessionCredentialsProvider {
 
   public static final String NAME
-      = "org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider";
+      = "software.amazon.glue.s3a.TemporaryAWSCredentialsProvider";
 
   public static final String COMPONENT
       = "Session credentials in Hadoop configuration";
@@ -86,7 +83,7 @@ public class TemporaryAWSCredentialsProvider extends AbstractSessionCredentialsP
    * @throws NoAwsCredentialsException the credentials are actually empty.
    */
   @Override
-  protected AwsCredentials createCredentials(Configuration config)
+  protected AWSCredentials createCredentials(Configuration config)
       throws IOException {
     MarshalledCredentials creds = MarshalledCredentialBinding.fromFileSystem(
         getUri(), config);

@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.commit.staging;
 
 import java.io.IOException;
-
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
 import software.amazon.glue.s3a.commit.AbstractS3ACommitterFactory;
@@ -33,7 +32,7 @@ public class DirectoryStagingCommitterFactory
    * Name of this class: {@value}.
    */
   public static final String CLASSNAME
-      = "org.apache.hadoop.fs.s3a.commit.staging"
+      = "software.amazon.glue.s3a.commit.staging"
       + ".DirectoryStagingCommitterFactory";
 
   public PathOutputCommitter createTaskCommitter(S3AFileSystem fileSystem,

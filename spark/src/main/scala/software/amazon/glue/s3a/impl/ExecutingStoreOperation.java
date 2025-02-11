@@ -17,10 +17,8 @@ package software.amazon.glue.s3a.impl;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.apache.hadoop.util.Preconditions;
-
 import org.apache.hadoop.fs.store.audit.AuditSpan;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.util.functional.CallableRaisingIOE;
 
 /**

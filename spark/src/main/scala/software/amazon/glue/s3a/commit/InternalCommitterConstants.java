@@ -15,6 +15,9 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC;
+import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC_COMMITTER_ENABLED;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import software.amazon.glue.s3a.commit.magic.MagicS3GuardCommitterFactory;
@@ -22,21 +25,12 @@ import software.amazon.glue.s3a.commit.staging.DirectoryStagingCommitterFactory;
 import software.amazon.glue.s3a.commit.staging.PartitionedStagingCommitterFactory;
 import software.amazon.glue.s3a.commit.staging.StagingCommitterFactory;
 
-import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC_COMMITTER_ENABLED;
-import static software.amazon.glue.s3a.commit.CommitConstants.MAGIC_PATH_PREFIX;
-
 /**
  * These are internal constants not intended for public use.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public final class InternalCommitterConstants {
-
-  /**
-   * How long threads in the thread pool stay alive when
-   * idle. Value in seconds: {@value}.
-   */
-  public static final long THREAD_KEEP_ALIVE_TIME = 60L;
 
   private InternalCommitterConstants() {
   }
@@ -105,7 +99,7 @@ public final class InternalCommitterConstants {
 
   /** Error message for a path without a magic element in the list: {@value}. */
   public static final String E_NO_MAGIC_PATH_ELEMENT
-      = "No " + MAGIC_PATH_PREFIX + " element in path";
+      = "No " + MAGIC + " element in path";
 
   /**
    * The UUID for jobs: {@value}.

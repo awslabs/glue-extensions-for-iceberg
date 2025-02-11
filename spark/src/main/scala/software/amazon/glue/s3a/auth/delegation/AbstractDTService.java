@@ -15,17 +15,15 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static java.util.Objects.requireNonNull;
+
 import java.io.IOException;
 import java.net.URI;
-
-import org.apache.hadoop.util.Preconditions;
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.impl.StoreContext;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.service.AbstractService;
-
-import static java.util.Objects.requireNonNull;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 
 /**
  * This is the base class for both the delegation binding

@@ -39,7 +39,7 @@ allprojects {
     ext {
         scalaVersion = '2.12'
         icebergVersion = '1.6.1'
-        hadoopVersion = '3.4.1'
+        hadoopVersion = '3.3.4'
         sparkVersion = '3.5.2'
         avroVersion = '1.11.3'
         awsV2Version = '2.27.23'

@@ -22,9 +22,9 @@
  * An audit service is instantiated when an S3A Filesystem is initialized
  * during creation.
  * The choice of service is determined in the configuration option
- * {@link org.apache.hadoop.fs.s3a.audit.S3AAuditConstants#AUDIT_SERVICE_CLASSNAME}.
+ * {@link software.amazon.glue.s3a.audit.S3AAuditConstants#AUDIT_SERVICE_CLASSNAME}.
  * The service MUST implement the interface
- * {@link org.apache.hadoop.fs.s3a.audit.OperationAuditor}
+ * {@link software.amazon.glue.s3a.audit.OperationAuditor}
  * to provide an {@link org.apache.hadoop.fs.store.audit.AuditSpan} whenever
  * an operation is started through a public FileSystem API call
  * (+some other operations).

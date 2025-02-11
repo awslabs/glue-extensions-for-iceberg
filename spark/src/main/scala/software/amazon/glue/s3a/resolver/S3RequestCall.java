@@ -1,3 +1,18 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ *
+ *  http://aws.amazon.com/apache2.0
+ *
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
 package software.amazon.glue.s3a.resolver;
 
 import java.util.ArrayList;
@@ -53,7 +68,7 @@ public class S3RequestCall implements S3Call {
     StringBuilder stringBuilder = new StringBuilder();
     stringBuilder.append("{Bucket: ").append(getBucketName());
 
-    stringBuilder.append(",[S3ARequests: ");
+    stringBuilder.append(",[S3Requests: ");
     for (S3Request s3Request : getS3Requests()) {
       stringBuilder.append(s3Request.name()).append(" ");
     }

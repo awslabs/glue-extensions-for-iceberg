@@ -15,6 +15,20 @@
 
 package software.amazon.glue.s3a.tools;
 
+import static software.amazon.glue.s3a.Constants.AUTHORITATIVE_PATH;
+import static software.amazon.glue.s3a.Constants.BULK_DELETE_PAGE_SIZE;
+import static software.amazon.glue.s3a.Constants.BULK_DELETE_PAGE_SIZE_DEFAULT;
+import static software.amazon.glue.s3a.Invoker.once;
+import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.ioStatisticsSourceToString;
+import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_INTERRUPTED;
+import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_NOT_ACCEPTABLE;
+import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_NOT_FOUND;
+import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_SUCCESS;
+import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_USAGE;
+
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -28,15 +42,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import org.apache.hadoop.classification.VisibleForTesting;
-import software.amazon.glue.s3a.AWSBadRequestException;
-import org.apache.hadoop.util.Preconditions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
@@ -52,27 +57,21 @@ import software.amazon.glue.s3a.UnknownStoreException;
 import software.amazon.glue.s3a.impl.DirMarkerTracker;
 import software.amazon.glue.s3a.impl.DirectoryPolicy;
 import software.amazon.glue.s3a.impl.DirectoryPolicyImpl;
-import software.amazon.glue.s3a.impl.MultiObjectDeleteException;
 import software.amazon.glue.s3a.impl.StoreContext;
 import software.amazon.glue.s3a.s3guard.S3GuardTool;
 import org.apache.hadoop.fs.shell.CommandFormat;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.util.DurationInfo;
 import org.apache.hadoop.util.ExitUtil;
-
-
-import static software.amazon.glue.s3a.Constants.AUTHORITATIVE_PATH;
-import static software.amazon.glue.s3a.Constants.BULK_DELETE_PAGE_SIZE;
-import static software.amazon.glue.s3a.Constants.BULK_DELETE_PAGE_SIZE_DEFAULT;
-import static software.amazon.glue.s3a.Invoker.once;
-import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.ioStatisticsSourceToString;
-import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_INTERRUPTED;
-import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_NOT_ACCEPTABLE;
-import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_NOT_FOUND;
-import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_SUCCESS;
-import static org.apache.hadoop.service.launcher.LauncherExitCodes.EXIT_USAGE;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Audit an S3 bucket for directory markers.
+ * Audit and S3 bucket for directory markers.
+ * <p></p>
+ * This tool does not go anywhere near S3Guard; its scan bypasses any
+ * metastore as we are explicitly looking for marker objects.
  */
 @InterfaceAudience.LimitedPrivate("management tools")
 @InterfaceStability.Unstable
@@ -146,7 +145,7 @@ public final class MarkerTool extends S3GuardTool {
   /**
    * Constant to use when there is no limit on the number of
    * objects listed: {@value}.
-   * <p>
+   * <p></p>
    * The value is 0 and not -1 because it allows for the limit to be
    * set on the command line {@code -limit 0}.
    * The command line parser rejects {@code -limit -1} as the -1
@@ -234,7 +233,13 @@ public final class MarkerTool extends S3GuardTool {
   public int run(final String[] args, final PrintStream stream)
       throws ExitUtil.ExitException, Exception {
     this.out = stream;
-    final List<String> parsedArgs = parseArgsWithErrorReporting(args);
+    final List<String> parsedArgs;
+    try {
+      parsedArgs = parseArgs(args);
+    } catch (CommandFormat.UnknownOptionException e) {
+      errorln(getUsage());
+      throw new ExitUtil.ExitException(EXIT_USAGE, e.getMessage(), e);
+    }
     if (parsedArgs.size() != 1) {
       errorln(getUsage());
       println(out, "Supplied arguments: ["
@@ -468,23 +473,17 @@ public final class MarkerTool extends S3GuardTool {
           '}';
     }
 
-    /**
-     * @return Exit code to report.
-     */
+    /** Exit code to report. */
     public int getExitCode() {
       return exitCode;
     }
 
-    /**
-     * @return Tracker which did the scan.
-     */
+    /** Tracker which did the scan. */
     public DirMarkerTracker getTracker() {
       return tracker;
     }
 
-    /**
-     * @return Summary of purge. Null if none took place.
-     */
+    /** Summary of purge. Null if none took place. */
     public MarkerPurgeSummary getPurgeSummary() {
       return purgeSummary;
     }
@@ -660,7 +659,7 @@ public final class MarkerTool extends S3GuardTool {
    * @param path path to scan
    * @param tracker tracker to update
    * @param limit limit of files to scan; -1 for 'unlimited'
-   * @return true if the scan completely scanned the entire tree
+   * @return true if the scan completedly scanned the entire tree
    * @throws IOException IO failure
    */
   @Retries.RetryTranslated
@@ -671,30 +670,8 @@ public final class MarkerTool extends S3GuardTool {
 
     int count = 0;
     boolean result = true;
-
-    // the path/key stuff loses any trailing / passed in.
-    // but this may actually be needed.
-    RemoteIterator<S3AFileStatus> listing = null;
-    String listkey = storeContext.pathToKey(path);
-    if (listkey.isEmpty()) {
-      // root. always give it a path to keep ranger happy.
-      listkey = "/";
-    }
-
-    try {
-      listing = operations.listObjects(path, listkey);
-    } catch (AWSBadRequestException e) {
-      // endpoint was unhappy. this is generally unrecoverable, but some
-      // third party stores do insist on a / here.
-      LOG.debug("Failed to list \"{}\"", listkey, e);
-      // now retry with a trailing / in case that works
-      if (listkey.endsWith("/")) {
-        // already has a trailing /, so fail
-        throw e;
-      }
-      // try again.
-      listing = operations.listObjects(path, listkey + "/");
-    }
+    RemoteIterator<S3AFileStatus> listing = operations
+        .listObjects(path, storeContext.pathToKey(path));
     while (listing.hasNext()) {
       count++;
       S3AFileStatus status = listing.next();
@@ -799,7 +776,7 @@ public final class MarkerTool extends S3GuardTool {
   private MarkerPurgeSummary purgeMarkers(
       final DirMarkerTracker tracker,
       final int deletePageSize)
-      throws MultiObjectDeleteException, AwsServiceException, IOException {
+      throws MultiObjectDeleteException, AmazonClientException, IOException {
 
     MarkerPurgeSummary summary = new MarkerPurgeSummary();
     // we get a map of surplus markers to delete.
@@ -807,13 +784,13 @@ public final class MarkerTool extends S3GuardTool {
         = tracker.getSurplusMarkers();
     int size = markers.size();
     // build a list from the strings in the map
-    List<ObjectIdentifier> collect =
+    List<DeleteObjectsRequest.KeyVersion> collect =
         markers.values().stream()
-            .map(p -> ObjectIdentifier.builder().key(p.getKey()).build())
+            .map(p -> new DeleteObjectsRequest.KeyVersion(p.getKey()))
             .collect(Collectors.toList());
     // build an array list for ease of creating the lists of
     // keys in each page through the subList() method.
-    List<ObjectIdentifier> markerKeys =
+    List<DeleteObjectsRequest.KeyVersion> markerKeys =
         new ArrayList<>(collect);
 
     // now randomize. Why so? if the list spans multiple S3 partitions,
@@ -834,11 +811,12 @@ public final class MarkerTool extends S3GuardTool {
     while (start < size) {
       // end is one past the end of the page
       int end = Math.min(start + deletePageSize, size);
-      List<ObjectIdentifier> page = markerKeys.subList(start,
+      List<DeleteObjectsRequest.KeyVersion> page = markerKeys.subList(start,
           end);
+      List<Path> undeleted = new ArrayList<>();
       once("Remove S3 Keys",
           tracker.getBasePath().toString(), () ->
-              operations.removeKeys(page, true));
+              operations.removeKeys(page, true, undeleted, null, false));
       summary.deleteRequests++;
       // and move to the start of the next page
       start = end;
@@ -861,7 +839,6 @@ public final class MarkerTool extends S3GuardTool {
    * Execute the marker tool, with no checks on return codes.
    *
    * @param scanArgs set of args for the scanner.
-   * @throws IOException IO failure
    * @return the result
    */
   @SuppressWarnings("IOResourceOpenedButNotSafelyClosed")
@@ -875,9 +852,9 @@ public final class MarkerTool extends S3GuardTool {
 
   /**
    * Arguments for the scan.
-   * <p>
+   * <p></p>
    * Uses a builder/argument object because too many arguments were
-   * being created, and it was making maintenance harder.
+   * being created and it was making maintenance harder.
    */
   public static final class ScanArgs {
 
@@ -982,71 +959,43 @@ public final class MarkerTool extends S3GuardTool {
     /** Consider only markers in nonauth paths as errors. */
     private boolean nonAuth = false;
 
-    /**
-     * Source FS; must be or wrap an S3A FS.
-     * @param source Source FileSystem
-     * @return the builder class after scanning source FS
-     */
+    /** Source FS; must be or wrap an S3A FS. */
     public ScanArgsBuilder withSourceFS(final FileSystem source) {
       this.sourceFS = source;
       return this;
     }
 
-    /**
-     * Path to scan.
-     * @param p path to scan
-     * @return builder class for method chaining
-     */
+    /** Path to scan. */
     public ScanArgsBuilder withPath(final Path p) {
       this.path = p;
       return this;
     }
 
-    /**
-     * Should the markers be purged? This is also enabled when using the clean flag on the CLI.
-     * @param d set to purge if true
-     * @return builder class for method chaining
-     */
+    /** Purge? */
     public ScanArgsBuilder withDoPurge(final boolean d) {
       this.doPurge = d;
       return this;
     }
 
-    /**
-     * Min marker count an audit must find (ignored on purge).
-     * @param min Minimum Marker Count (default 0)
-     * @return builder class for method chaining
-     */
+    /** Min marker count (ignored on purge). */
     public ScanArgsBuilder withMinMarkerCount(final int min) {
       this.minMarkerCount = min;
       return this;
     }
 
-    /**
-     * Max marker count an audit must find (ignored on purge).
-     * @param max Maximum Marker Count (default 0)
-     * @return builder class for method chaining
-     */
+    /** Max marker count (ignored on purge). */
     public ScanArgsBuilder withMaxMarkerCount(final int max) {
       this.maxMarkerCount = max;
       return this;
     }
 
-    /**
-     * Limit of files to scan; 0 for 'unlimited'.
-     * @param l Limit of files to scan
-     * @return builder class for method chaining
-     */
+    /** Limit of files to scan; 0 for 'unlimited'. */
     public ScanArgsBuilder withLimit(final int l) {
       this.limit = l;
       return this;
     }
 
-    /**
-     * Consider only markers in non-authoritative paths as errors.
-     * @param b True if tool should only consider markers in non-authoritative paths
-     * @return builder class for method chaining
-     */
+    /** Consider only markers in nonauth paths as errors. */
     public ScanArgsBuilder withNonAuth(final boolean b) {
       this.nonAuth = b;
       return this;

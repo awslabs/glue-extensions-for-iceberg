@@ -15,7 +15,10 @@
 
 package software.amazon.glue.s3a.commit.files;
 
-import javax.annotation.Nullable;
+import static software.amazon.glue.s3a.commit.CommitUtils.validateCollectionClass;
+import static software.amazon.glue.s3a.commit.ValidationFailure.verify;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.ArrayList;
@@ -24,24 +27,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.commit.ValidationFailure;
-import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.fs.statistics.IOStatisticsSnapshot;
 import org.apache.hadoop.fs.statistics.IOStatisticsSource;
 import org.apache.hadoop.util.JsonSerialization;
-
-import static software.amazon.glue.s3a.commit.CommitUtils.validateCollectionClass;
-import static software.amazon.glue.s3a.commit.ValidationFailure.verify;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Persistent format for multiple pending commits.
@@ -61,7 +57,8 @@ import static software.amazon.glue.s3a.commit.ValidationFailure.verify;
 @SuppressWarnings("unused")
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class PendingSet extends PersistentCommitData<PendingSet> {
+public class PendingSet extends PersistentCommitData
+    implements IOStatisticsSource {
   private static final Logger LOG = LoggerFactory.getLogger(PendingSet.class);
 
   /**
@@ -109,30 +106,40 @@ public class PendingSet extends PersistentCommitData<PendingSet> {
   }
 
   /**
-   * Get a shared JSON serializer for this class.
+   * Get a JSON serializer for this class.
    * @return a serializer.
    */
   public static JsonSerialization<PendingSet> serializer() {
-    return new JsonSerialization<>(PendingSet.class, false, false);
+    return new JsonSerialization<>(PendingSet.class, false, true);
   }
-
 
   /**
    * Load an instance from a file, then validate it.
    * @param fs filesystem
    * @param path path
+   * @return the loaded instance
+   * @throws IOException IO failure
+   * @throws ValidationFailure if the data is invalid
+   */
+  public static PendingSet load(FileSystem fs, Path path)
+      throws IOException {
+    LOG.debug("Reading pending commits in file {}", path);
+    PendingSet instance = serializer().load(fs, path);
+    instance.validate();
+    return instance;
+  }
+
+  /**
+   * Load an instance from a file, then validate it.
+   * @param fs filesystem
    * @param status status of file to load
    * @return the loaded instance
    * @throws IOException IO failure
    * @throws ValidationFailure if the data is invalid
    */
-  public static PendingSet load(FileSystem fs, Path path,
-      @Nullable FileStatus status)
+  public static PendingSet load(FileSystem fs, FileStatus status)
       throws IOException {
-    LOG.debug("Reading pending commits in file {}", path);
-    PendingSet instance = serializer().load(fs, path, status);
-    instance.validate();
-    return instance;
+    return load(fs, status.getPath());
   }
 
   /**
@@ -183,8 +190,8 @@ public class PendingSet extends PersistentCommitData<PendingSet> {
   }
 
   @Override
-  public byte[] toBytes(JsonSerialization<PendingSet> serializer) throws IOException {
-    return serializer.toBytes(this);
+  public byte[] toBytes() throws IOException {
+    return serializer().toBytes(this);
   }
 
   /**
@@ -196,10 +203,9 @@ public class PendingSet extends PersistentCommitData<PendingSet> {
   }
 
   @Override
-  public IOStatistics save(final FileSystem fs,
-      final Path path,
-      final JsonSerialization<PendingSet> serializer) throws IOException {
-    return saveFile(fs, path, this, serializer, true);
+  public void save(FileSystem fs, Path path, boolean overwrite)
+      throws IOException {
+    serializer().save(fs, path, this, overwrite);
   }
 
   /** @return the version marker. */

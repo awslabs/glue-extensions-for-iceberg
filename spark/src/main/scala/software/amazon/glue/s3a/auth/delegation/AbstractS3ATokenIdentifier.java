@@ -15,6 +15,8 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static java.util.Objects.requireNonNull;
+
 import java.io.ByteArrayInputStream;
 import java.io.DataInput;
 import java.io.DataInputStream;
@@ -23,14 +25,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Objects;
 import java.util.UUID;
-
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.delegation.web.DelegationTokenIdentifier;
 import org.apache.hadoop.util.Time;
-
-import static java.util.Objects.requireNonNull;
 
 /**
  * An S3A Delegation Token Identifier: contains the information needed

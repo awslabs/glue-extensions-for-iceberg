@@ -15,17 +15,31 @@
 
 package software.amazon.glue.s3a;
 
+import static software.amazon.glue.s3a.Constants.STREAM_READ_GAUGE_INPUT_POLICY;
+import static software.amazon.glue.s3a.Statistic.*;
+import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.demandStringifyIOStatistics;
+import static org.apache.hadoop.fs.statistics.IOStatisticsSupport.snapshotIOStatistics;
+import static org.apache.hadoop.fs.statistics.StoreStatisticNames.ACTION_EXECUTOR_ACQUIRED;
+import static org.apache.hadoop.fs.statistics.StoreStatisticNames.ACTION_HTTP_GET_REQUEST;
+import static org.apache.hadoop.fs.statistics.StoreStatisticNames.SUFFIX_FAILURES;
+import static org.apache.hadoop.fs.statistics.StreamStatisticNames.STREAM_READ_UNBUFFERED;
+import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
+
+import java.io.Closeable;
+import java.net.URI;
+import java.time.Duration;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nullable;
-
-import org.apache.hadoop.classification.VisibleForTesting;
-import software.amazon.glue.s3a.Statistic;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.impl.WeakRefMetricsSource;
+import software.amazon.glue.s3a.Statistic;
+import software.amazon.glue.s3a.s3guard.MetastoreInstrumentation;
 import software.amazon.glue.s3a.statistics.BlockOutputStreamStatistics;
 import software.amazon.glue.s3a.statistics.ChangeTrackerStatistics;
 import software.amazon.glue.s3a.statistics.CommitterStatistics;
@@ -35,14 +49,13 @@ import software.amazon.glue.s3a.statistics.S3AInputStreamStatistics;
 import software.amazon.glue.s3a.statistics.StatisticTypeEnum;
 import software.amazon.glue.s3a.statistics.impl.AbstractS3AStatisticsSource;
 import software.amazon.glue.s3a.statistics.impl.CountingChangeTracker;
-import org.apache.hadoop.fs.statistics.impl.ForwardingIOStatisticsStore;
+import software.amazon.glue.s3a.statistics.impl.ForwardingIOStatisticsStore;
+import org.apache.hadoop.fs.statistics.DurationTracker;
 import org.apache.hadoop.fs.statistics.DurationTrackerFactory;
 import org.apache.hadoop.fs.statistics.IOStatisticsLogging;
-import org.apache.hadoop.fs.statistics.IOStatisticsSource;
 import org.apache.hadoop.fs.statistics.IOStatisticsSnapshot;
-import org.apache.hadoop.fs.statistics.StoreStatisticNames;
+import org.apache.hadoop.fs.statistics.IOStatisticsSource;
 import org.apache.hadoop.fs.statistics.StreamStatisticNames;
-import org.apache.hadoop.fs.statistics.DurationTracker;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStoreBuilder;
@@ -60,26 +73,9 @@ import org.apache.hadoop.metrics2.lib.MutableCounterLong;
 import org.apache.hadoop.metrics2.lib.MutableGaugeLong;
 import org.apache.hadoop.metrics2.lib.MutableMetric;
 import org.apache.hadoop.metrics2.lib.MutableQuantiles;
-
-import java.io.Closeable;
-import java.net.URI;
-import java.time.Duration;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-
-import static software.amazon.glue.s3a.Constants.STREAM_READ_GAUGE_INPUT_POLICY;
-import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.demandStringifyIOStatistics;
-import static org.apache.hadoop.fs.statistics.IOStatisticsSupport.snapshotIOStatistics;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.ACTION_EXECUTOR_ACQUIRED;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.ACTION_HTTP_GET_REQUEST;
-import static org.apache.hadoop.fs.statistics.StoreStatisticNames.SUFFIX_FAILURES;
-import static org.apache.hadoop.fs.statistics.StreamStatisticNames.STREAM_READ_UNBUFFERED;
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
-import static software.amazon.glue.s3a.Statistic.*;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Instrumentation of S3A.
@@ -159,14 +155,17 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
 
   private final DurationTrackerFactory durationTrackerFactory;
 
-  /**
-   * Weak reference so there's no back reference to the instrumentation.
-   */
-  private WeakRefMetricsSource metricsSourceReference;
+  private String metricsSourceName;
 
   private final MetricsRegistry registry =
       new MetricsRegistry("s3aFileSystem").setContext(CONTEXT);
+  private final MutableQuantiles putLatencyQuantile;
   private final MutableQuantiles throttleRateQuantile;
+  private final MutableQuantiles s3GuardThrottleRateQuantile;
+
+  /** Instantiate this without caring whether or not S3Guard is enabled. */
+  private final S3GuardInstrumentation s3GuardInstrumentation
+      = new S3GuardInstrumentation();
 
   /**
    * This is the IOStatistics store for the S3AFileSystem
@@ -220,6 +219,10 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
 
     //todo need a config for the quantiles interval?
     int interval = 1;
+    putLatencyQuantile = quantiles(S3GUARD_METADATASTORE_PUT_PATH_LATENCY,
+        "ops", "latency", interval);
+    s3GuardThrottleRateQuantile = quantiles(S3GUARD_METADATASTORE_THROTTLE_RATE,
+        "events", "frequency (Hz)", interval);
     throttleRateQuantile = quantiles(STORE_IO_THROTTLE_RATE,
         "events", "frequency (Hz)", interval);
 
@@ -235,33 +238,19 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
         new MetricDurationTrackerFactory());
   }
 
-  /**
-   * Get the current metrics system; demand creating.
-   * @return a metric system, creating if need be.
-   */
   @VisibleForTesting
-  static MetricsSystem getMetricsSystem() {
+  public MetricsSystem getMetricsSystem() {
     synchronized (METRICS_SYSTEM_LOCK) {
       if (metricsSystem == null) {
         metricsSystem = new MetricsSystemImpl();
         metricsSystem.init(METRICS_SYSTEM_NAME);
-        LOG.debug("Metrics system inited {}", metricsSystem);
       }
     }
     return metricsSystem;
   }
 
   /**
-   * Does the instrumentation have a metrics system?
-   * @return true if the metrics system is present.
-   */
-  @VisibleForTesting
-  static boolean hasMetricSystem() {
-    return metricsSystem != null;
-  }
-
-  /**
-   * Register this instance as a metrics source via a weak reference.
+   * Register this instance as a metrics source.
    * @param name s3a:// URI for the associated FileSystem instance
    */
   private void registerAsMetricsSource(URI name) {
@@ -273,9 +262,8 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
       number = ++metricsSourceNameCounter;
     }
     String msName = METRICS_SOURCE_BASENAME + number;
-    String metricsSourceName = msName + "-" + name.getHost();
-    metricsSourceReference = new WeakRefMetricsSource(metricsSourceName, this);
-    metricsSystem.register(metricsSourceName, "", metricsSourceReference);
+    metricsSourceName = msName + "-" + name.getHost();
+    metricsSystem.register(metricsSourceName, "", this);
   }
 
   /**
@@ -685,6 +673,15 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
   }
 
   /**
+   * Create a MetastoreInstrumentation instrumentation instance.
+   * There's likely to be at most one instance of this per FS instance.
+   * @return the S3Guard instrumentation point.
+   */
+  public MetastoreInstrumentation getS3GuardInstrumentation() {
+    return s3GuardInstrumentation;
+  }
+
+  /**
    * Create a new instance of the committer statistics.
    * @return a new committer statistics instance
    */
@@ -697,42 +694,21 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
     registry.snapshot(collector.addRecord(registry.info().name()), true);
   }
 
-  /**
-   * if registered with the metrics, return the
-   * name of the source.
-   * @return the name of the metrics, or null if this instance is not bonded.
-   */
-  public String getMetricSourceName() {
-    return metricsSourceReference != null
-        ? metricsSourceReference.getName()
-        : null;
-  }
-
   public void close() {
-    if (metricsSourceReference != null) {
-      // get the name
-      String name = metricsSourceReference.getName();
-      LOG.debug("Unregistering metrics for {}", name);
-      // then set to null so a second close() is a noop here.
-      metricsSourceReference = null;
-      synchronized (METRICS_SYSTEM_LOCK) {
-        // it is critical to close each quantile, as they start a scheduled
-        // task in a shared thread pool.
-        if (metricsSystem == null) {
-          LOG.debug("there is no metric system to unregister {} from", name);
-          return;
-        }
-        throttleRateQuantile.stop();
-
-        metricsSystem.unregisterSource(name);
-        metricsSourceActiveCounter--;
-        int activeSources = metricsSourceActiveCounter;
-        if (activeSources == 0) {
-          LOG.debug("Shutting down metrics publisher");
-          metricsSystem.publishMetricsNow();
-          metricsSystem.shutdown();
-          metricsSystem = null;
-        }
+    synchronized (METRICS_SYSTEM_LOCK) {
+      // it is critical to close each quantile, as they start a scheduled
+      // task in a shared thread pool.
+      putLatencyQuantile.stop();
+      throttleRateQuantile.stop();
+      s3GuardThrottleRateQuantile.stop();
+      metricsSystem.unregisterSource(metricsSourceName);
+      metricsSourceActiveCounter--;
+      int activeSources = metricsSourceActiveCounter;
+      if (activeSources == 0) {
+        LOG.debug("Shutting down metrics publisher");
+        metricsSystem.publishMetricsNow();
+        metricsSystem.shutdown();
+        metricsSystem = null;
       }
     }
   }
@@ -843,10 +819,6 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
     private final AtomicLong readOperations;
     private final AtomicLong readFullyOperations;
     private final AtomicLong seekOperations;
-    private final AtomicLong readVectoredOperations;
-    private final AtomicLong bytesDiscardedInVectoredIO;
-    private final AtomicLong readVectoredIncomingRanges;
-    private final AtomicLong readVectoredCombinedRanges;
 
     /** Bytes read by the application and any when draining streams . */
     private final AtomicLong totalBytesRead;
@@ -880,26 +852,9 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
               StreamStatisticNames.STREAM_READ_SEEK_BYTES_SKIPPED,
               StreamStatisticNames.STREAM_READ_TOTAL_BYTES,
               StreamStatisticNames.STREAM_READ_UNBUFFERED,
-              StreamStatisticNames.STREAM_READ_VECTORED_COMBINED_RANGES,
-              StreamStatisticNames.STREAM_READ_VECTORED_INCOMING_RANGES,
-              StreamStatisticNames.STREAM_READ_VECTORED_OPERATIONS,
-              StreamStatisticNames.STREAM_READ_VECTORED_READ_BYTES_DISCARDED,
-              StreamStatisticNames.STREAM_READ_VERSION_MISMATCHES,
-              StreamStatisticNames.STREAM_EVICT_BLOCKS_FROM_FILE_CACHE)
-          .withGauges(STREAM_READ_GAUGE_INPUT_POLICY,
-              STREAM_READ_BLOCKS_IN_FILE_CACHE.getSymbol(),
-              STREAM_READ_ACTIVE_PREFETCH_OPERATIONS.getSymbol(),
-              STREAM_READ_ACTIVE_MEMORY_IN_USE.getSymbol()
-              )
-          .withDurationTracking(ACTION_HTTP_GET_REQUEST,
-              ACTION_EXECUTOR_ACQUIRED,
-              StoreStatisticNames.ACTION_FILE_OPENED,
-              StreamStatisticNames.STREAM_READ_REMOTE_STREAM_ABORTED,
-              StreamStatisticNames.STREAM_READ_REMOTE_STREAM_DRAINED,
-              StreamStatisticNames.STREAM_READ_PREFETCH_OPERATIONS,
-              StreamStatisticNames.STREAM_READ_REMOTE_BLOCK_READ,
-              StreamStatisticNames.STREAM_READ_BLOCK_ACQUIRE_AND_READ,
-              StreamStatisticNames.STREAM_FILE_CACHE_EVICTION)
+              StreamStatisticNames.STREAM_READ_VERSION_MISMATCHES)
+          .withGauges(STREAM_READ_GAUGE_INPUT_POLICY)
+          .withDurationTracking(ACTION_HTTP_GET_REQUEST)
           .build();
       setIOStatistics(st);
       aborted = st.getCounterReference(
@@ -930,14 +885,6 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
           StreamStatisticNames.STREAM_READ_OPERATIONS_INCOMPLETE);
       readOperations = st.getCounterReference(
           StreamStatisticNames.STREAM_READ_OPERATIONS);
-      readVectoredOperations = st.getCounterReference(
-          StreamStatisticNames.STREAM_READ_VECTORED_OPERATIONS);
-      bytesDiscardedInVectoredIO =  st.getCounterReference(
-              StreamStatisticNames.STREAM_READ_VECTORED_READ_BYTES_DISCARDED);
-      readVectoredIncomingRanges = st.getCounterReference(
-              StreamStatisticNames.STREAM_READ_VECTORED_INCOMING_RANGES);
-      readVectoredCombinedRanges = st.getCounterReference(
-              StreamStatisticNames.STREAM_READ_VECTORED_COMBINED_RANGES);
       readFullyOperations = st.getCounterReference(
           StreamStatisticNames.STREAM_READ_FULLY_OPERATIONS);
       seekOperations = st.getCounterReference(
@@ -966,18 +913,6 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
      */
     private long increment(String name, long value) {
       return incCounter(name, value);
-    }
-
-    /**
-     * Increment the Statistic gauge and the local IOStatistics
-     * equivalent.
-     * @param statistic statistic
-     * @param v value.
-     * @return local IOStatistic value
-     */
-    private long incAllGauges(Statistic statistic, long v) {
-      incrementGauge(statistic, v);
-      return incGauge(statistic.getSymbol(), v);
     }
 
     /**
@@ -1093,25 +1028,6 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
       if (requested > actual) {
         readsIncomplete.incrementAndGet();
       }
-    }
-
-    @Override
-    public void readVectoredOperationStarted(int numIncomingRanges,
-                                             int numCombinedRanges) {
-      readVectoredIncomingRanges.addAndGet(numIncomingRanges);
-      readVectoredCombinedRanges.addAndGet(numCombinedRanges);
-      readVectoredOperations.incrementAndGet();
-    }
-
-    @Override
-    public void readVectoredBytesDiscarded(int discarded) {
-      bytesDiscardedInVectoredIO.addAndGet(discarded);
-    }
-
-    @Override
-    public void executorAcquired(Duration timeInQueue) {
-      // update the duration fields in the IOStatistics.
-      localIOStatistics().addTimedOperation(ACTION_EXECUTOR_ACQUIRED, timeInQueue);
     }
 
     /**
@@ -1372,48 +1288,6 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
       return trackDuration(ACTION_HTTP_GET_REQUEST);
     }
 
-    @Override
-    public DurationTracker initiateInnerStreamClose(final boolean abort) {
-      return trackDuration(abort
-          ? StreamStatisticNames.STREAM_READ_REMOTE_STREAM_ABORTED
-          : StreamStatisticNames.STREAM_READ_REMOTE_STREAM_DRAINED);
-    }
-
-    @Override
-    public DurationTracker prefetchOperationStarted() {
-      incAllGauges(STREAM_READ_ACTIVE_PREFETCH_OPERATIONS, 1);
-      return trackDuration(StreamStatisticNames.STREAM_READ_PREFETCH_OPERATIONS);
-    }
-
-    @Override
-    public void blockAddedToFileCache() {
-      incAllGauges(STREAM_READ_BLOCKS_IN_FILE_CACHE, 1);
-    }
-
-    @Override
-    public void blockRemovedFromFileCache() {
-      incAllGauges(STREAM_READ_BLOCKS_IN_FILE_CACHE, -1);
-    }
-
-    @Override
-    public void blockEvictedFromFileCache() {
-      increment(StreamStatisticNames.STREAM_EVICT_BLOCKS_FROM_FILE_CACHE);
-    }
-
-    @Override
-    public void prefetchOperationCompleted() {
-      incAllGauges(STREAM_READ_ACTIVE_PREFETCH_OPERATIONS, -1);
-    }
-
-    @Override
-    public void memoryAllocated(int size) {
-      incAllGauges(STREAM_READ_ACTIVE_MEMORY_IN_USE, size);
-    }
-
-    @Override
-    public void memoryFreed(int size) {
-      incAllGauges(STREAM_READ_ACTIVE_MEMORY_IN_USE, -size);
-    }
   }
 
   /**
@@ -1441,16 +1315,8 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
     incrementCounter(STREAM_WRITE_EXCEPTIONS,
         source.lookupCounterValue(
             StreamStatisticNames.STREAM_WRITE_EXCEPTIONS));
-
     // merge in all the IOStatistics
-    final IOStatisticsStore sourceIOStatistics = source.getIOStatistics();
-    this.getIOStatistics().aggregate(sourceIOStatistics);
-
-    // propagate any extra values into the FS-level stats;
-    incrementMutableCounter(
-        COMMITTER_MAGIC_MARKER_PUT.getSymbol(),
-        sourceIOStatistics.counters().get(COMMITTER_MAGIC_MARKER_PUT.getSymbol()));
-
+    this.getIOStatistics().aggregate(source.getIOStatistics());
   }
 
   /**
@@ -1503,18 +1369,13 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
               INVOCATION_HFLUSH.getSymbol(),
               INVOCATION_HSYNC.getSymbol())
           .withGauges(
-              STREAM_WRITE_BLOCK_UPLOADS_ACTIVE.getSymbol(),
               STREAM_WRITE_BLOCK_UPLOADS_PENDING.getSymbol(),
               STREAM_WRITE_BLOCK_UPLOADS_BYTES_PENDING.getSymbol())
           .withDurationTracking(
               ACTION_EXECUTOR_ACQUIRED,
-              COMMITTER_MAGIC_MARKER_PUT.getSymbol(),
               INVOCATION_ABORT.getSymbol(),
-              MULTIPART_UPLOAD_COMPLETED.getSymbol(),
-              MULTIPART_UPLOAD_PART_PUT.getSymbol(),
               OBJECT_MULTIPART_UPLOAD_ABORTED.getSymbol(),
-              OBJECT_MULTIPART_UPLOAD_INITIATED.getSymbol(),
-              OBJECT_PUT_REQUESTS.getSymbol())
+              MULTIPART_UPLOAD_COMPLETED.getSymbol())
           .build();
       setIOStatistics(st);
       // these are extracted to avoid lookups on heavily used counters.
@@ -1552,7 +1413,7 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
      * of block uploads pending (1) and the bytes pending (blockSize).
      */
     @Override
-    public void blockUploadQueued(long blockSize) {
+    public void blockUploadQueued(int blockSize) {
       incCounter(StreamStatisticNames.STREAM_WRITE_BLOCK_UPLOADS);
       incAllGauges(STREAM_WRITE_BLOCK_UPLOADS_PENDING, 1);
       incAllGauges(STREAM_WRITE_BLOCK_UPLOADS_BYTES_PENDING, blockSize);
@@ -1565,7 +1426,7 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
      * {@code STREAM_WRITE_BLOCK_UPLOADS_ACTIVE}.
      */
     @Override
-    public void blockUploadStarted(Duration timeInQueue, long blockSize) {
+    public void blockUploadStarted(Duration timeInQueue, int blockSize) {
       // the local counter is used in toString reporting.
       queueDuration.addAndGet(timeInQueue.toMillis());
       // update the duration fields in the IOStatistics.
@@ -1593,7 +1454,7 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
     @Override
     public void blockUploadCompleted(
         Duration timeSinceUploadStarted,
-        long blockSize) {
+        int blockSize) {
       transferDuration.addAndGet(timeSinceUploadStarted.toMillis());
       incAllGauges(STREAM_WRITE_BLOCK_UPLOADS_ACTIVE, -1);
       blockUploadsCompleted.incrementAndGet();
@@ -1607,7 +1468,7 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
     @Override
     public void blockUploadFailed(
         Duration timeSinceUploadStarted,
-        long blockSize) {
+        int blockSize) {
       incCounter(StreamStatisticNames.STREAM_WRITE_EXCEPTIONS);
     }
 
@@ -1752,6 +1613,64 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
   }
 
   /**
+   * Instrumentation exported to S3Guard.
+   */
+  private final class S3GuardInstrumentation
+      implements MetastoreInstrumentation {
+
+    @Override
+    public void initialized() {
+      incrementCounter(S3GUARD_METADATASTORE_INITIALIZATION, 1);
+    }
+
+    @Override
+    public void storeClosed() {
+
+    }
+
+    @Override
+    public void throttled() {
+      // counters are incremented by owner.
+    }
+
+    @Override
+    public void retrying() {
+      // counters are incremented by owner.
+    }
+
+    @Override
+    public void recordsDeleted(int count) {
+      incrementCounter(S3GUARD_METADATASTORE_RECORD_DELETES, count);
+    }
+
+    @Override
+    public void recordsRead(int count) {
+      incrementCounter(S3GUARD_METADATASTORE_RECORD_READS, count);
+    }
+
+    @Override
+    public void recordsWritten(int count) {
+      incrementCounter(S3GUARD_METADATASTORE_RECORD_WRITES, count);
+    }
+
+    @Override
+    public void directoryMarkedAuthoritative() {
+      incrementCounter(
+          S3GUARD_METADATASTORE_AUTHORITATIVE_DIRECTORIES_UPDATED,
+          1);
+    }
+
+    @Override
+    public void entryAdded(final long durationNanos) {
+      addValueToQuantiles(
+          S3GUARD_METADATASTORE_PUT_PATH_LATENCY,
+          durationNanos);
+      incrementCounter(S3GUARD_METADATASTORE_PUT_PATH_REQUEST, 1);
+    }
+
+  }
+
+  /**
    * Instrumentation exported to S3A Committers.
    * The S3AInstrumentation metrics and
    * {@link #instanceIOStatistics} are updated continuously.
@@ -1776,10 +1695,8 @@ public class S3AInstrumentation implements Closeable, MetricsSource,
               COMMITTER_TASKS_SUCCEEDED.getSymbol())
           .withDurationTracking(
               COMMITTER_COMMIT_JOB.getSymbol(),
-              COMMITTER_LOAD_SINGLE_PENDING_FILE.getSymbol(),
               COMMITTER_MATERIALIZE_FILE.getSymbol(),
-              COMMITTER_STAGE_FILE_UPLOAD.getSymbol(),
-              OBJECT_PUT_REQUESTS.getSymbol())
+              COMMITTER_STAGE_FILE_UPLOAD.getSymbol())
           .build();
       setIOStatistics(st);
     }

@@ -15,33 +15,33 @@
 
 package software.amazon.glue.s3a.audit.impl;
 
-import javax.annotation.Nullable;
+import static java.util.Objects.requireNonNull;
+import static software.amazon.glue.s3a.Statistic.AUDIT_FAILURE;
+import static software.amazon.glue.s3a.Statistic.AUDIT_REQUEST_EXECUTION;
+import static software.amazon.glue.s3a.audit.AuditIntegration.attachSpanToRequest;
+import static software.amazon.glue.s3a.audit.AuditIntegration.retrieveAttachedSpan;
+import static software.amazon.glue.s3a.audit.S3AAuditConstants.AUDIT_REQUEST_HANDLERS;
+
+import com.amazonaws.AmazonWebServiceRequest;
+import com.amazonaws.HandlerContextAware;
+import com.amazonaws.Request;
+import com.amazonaws.Response;
+import com.amazonaws.SdkBaseException;
+import com.amazonaws.handlers.HandlerAfterAttemptContext;
+import com.amazonaws.handlers.HandlerBeforeAttemptContext;
+import com.amazonaws.handlers.RequestHandler2;
+import com.amazonaws.http.HttpResponse;
+import com.amazonaws.services.s3.transfer.Transfer;
+import com.amazonaws.services.s3.transfer.internal.TransferStateChangeListener;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import software.amazon.awssdk.core.SdkRequest;
-import software.amazon.awssdk.core.SdkResponse;
-import software.amazon.awssdk.core.interceptor.Context;
-import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
-import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
-import software.amazon.awssdk.http.SdkHttpRequest;
-import software.amazon.awssdk.http.SdkHttpResponse;
-import software.amazon.awssdk.transfer.s3.progress.TransferListener;
-
-import org.apache.hadoop.conf.Configurable;
-import org.apache.hadoop.util.Preconditions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsAction;
-import org.apache.hadoop.fs.impl.WeakReferenceThreadMap;
 import software.amazon.glue.s3a.S3AFileStatus;
 import software.amazon.glue.s3a.Statistic;
 import software.amazon.glue.s3a.audit.AWSAuditEventCallbacks;
@@ -53,19 +53,13 @@ import software.amazon.glue.s3a.audit.AuditSpanS3A;
 import software.amazon.glue.s3a.audit.OperationAuditor;
 import software.amazon.glue.s3a.audit.OperationAuditorOptions;
 import software.amazon.glue.s3a.audit.S3AAuditConstants;
-import software.amazon.glue.s3a.impl.V2Migration;
-import org.apache.hadoop.fs.store.LogExactlyOnce;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
+import org.apache.hadoop.fs.store.LogExactlyOnce;
 import org.apache.hadoop.service.CompositeService;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.util.functional.FutureIO;
-
-import static java.util.Objects.requireNonNull;
-import static software.amazon.glue.s3a.Statistic.AUDIT_FAILURE;
-import static software.amazon.glue.s3a.Statistic.AUDIT_REQUEST_EXECUTION;
-import static software.amazon.glue.s3a.audit.AuditIntegration.attachSpanToRequest;
-import static software.amazon.glue.s3a.audit.AuditIntegration.retrieveAttachedSpan;
-import static software.amazon.glue.s3a.audit.S3AAuditConstants.AUDIT_EXECUTION_INTERCEPTORS;
-import static software.amazon.glue.s3a.audit.S3AAuditConstants.AUDIT_REQUEST_HANDLERS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Thread management for the active audit.
@@ -81,19 +75,13 @@ import static software.amazon.glue.s3a.audit.S3AAuditConstants.AUDIT_REQUEST_HAN
  * will deactivate the wrapped span and then
  * switch the active span to the unbounded span.
  *
- * This class also implements {@link ExecutionInterceptor} and
- * returns itself in {@link #createExecutionInterceptors()};
- * once registered with the S3 client, the implemented methods
- * will be called during different parts of an SDK request lifecycle,
- * which then locate the active span and forward the request.
+ * The inner class {@link AWSAuditEventCallbacks} is returned
+ * as a request handler in {@link #createRequestHandlers()};
+ * this forwards all requests to the outer {@code ActiveAuditManagerS3A},
+ * which then locates the active span and forwards the request.
  * If any such invocation raises an {@link AuditFailureException}
  * then the IOStatistics counter for {@code AUDIT_FAILURE}
  * is incremented.
- *
- * Uses the WeakReferenceThreadMap to store spans for threads.
- * Provided a calling class retains a reference to the span,
- * the active span will be retained.
- *
  *
  */
 @InterfaceAudience.Private
@@ -119,14 +107,6 @@ public final class ActiveAuditManagerS3A
       = "Span attached to request is not a wrapped span";
 
   /**
-   * Arbitrary threshold for triggering pruning on deactivation.
-   * High enough it doesn't happen very often, low enough
-   * that it will happen regularly on a busy system.
-   * Value: {@value}.
-   */
-  static final int PRUNE_THRESHOLD = 10_000;
-
-  /**
    * Audit service.
    */
   private OperationAuditor auditor;
@@ -143,26 +123,11 @@ public final class ActiveAuditManagerS3A
   private WrappingAuditSpan unbondedSpan;
 
   /**
-   * How many spans have to be deactivated before a prune is triggered?
-   * Fixed as a constant for now unless/until some pressing need
-   * for it to be made configurable ever surfaces.
-   */
-  private final int pruneThreshold = PRUNE_THRESHOLD;
-
-  /**
-   * Count down to next pruning.
-   */
-  private final AtomicInteger deactivationsBeforePrune = new AtomicInteger();
-
-  /**
    * Thread local span. This defaults to being
    * the unbonded span.
    */
-
-  private final WeakReferenceThreadMap<WrappingAuditSpan> activeSpanMap =
-      new WeakReferenceThreadMap<>(
-          (k) -> getUnbondedSpan(),
-          this::noteSpanReferenceLost);
+  private final ThreadLocal<WrappingAuditSpan> activeSpan =
+      ThreadLocal.withInitial(() -> getUnbondedSpan());
 
   /**
    * Destination for recording statistics, especially duration/count of
@@ -177,7 +142,6 @@ public final class ActiveAuditManagerS3A
   public ActiveAuditManagerS3A(final IOStatisticsStore iostatistics) {
     super("ActiveAuditManagerS3A");
     this.ioStatisticsStore = iostatistics;
-    this.deactivationsBeforePrune.set(pruneThreshold);
   }
 
   @Override
@@ -207,13 +171,6 @@ public final class ActiveAuditManagerS3A
     setUnbondedSpan(new WrappingAuditSpan(
         auditor.getUnbondedSpan(), false));
     LOG.debug("Started audit service {}", auditor);
-  }
-
-  @Override
-  protected void serviceStop() throws Exception {
-    // clear all references.
-    activeSpanMap.clear();
-    super.serviceStop();
   }
 
   @Override
@@ -263,7 +220,7 @@ public final class ActiveAuditManagerS3A
    * @return the active WrappingAuditSpan
    */
   private WrappingAuditSpan activeSpan() {
-    return activeSpanMap.getForCurrentThread();
+    return activeSpan.get();
   }
 
   /**
@@ -285,64 +242,11 @@ public final class ActiveAuditManagerS3A
    */
   private WrappingAuditSpan switchToActiveSpan(WrappingAuditSpan span) {
     if (span != null && span.isValidSpan()) {
-      activeSpanMap.setForCurrentThread(span);
+      activeSpan.set(span);
     } else {
-      activeSpanMap.removeForCurrentThread();
+      activeSpan.set(unbondedSpan);
     }
     return activeSpan();
-  }
-
-  /**
-   * Span reference lost from GC operations.
-   * This is only called when an attempt is made to retrieve on
-   * the active thread or when a prune operation is cleaning up.
-   *
-   * @param threadId thread ID.
-   */
-  private void noteSpanReferenceLost(long threadId) {
-    auditor.noteSpanReferenceLost(threadId);
-  }
-
-  /**
-   * Prune all null weak references, calling the referenceLost
-   * callback for each one.
-   *
-   * non-atomic and non-blocking.
-   * @return the number of entries pruned.
-   */
-  @VisibleForTesting
-  int prune() {
-    return activeSpanMap.prune();
-  }
-
-  /**
-   * remove the span from the reference map, shrinking the map in the process.
-   * if/when a new span is activated in the thread, a new entry will be created.
-   * and if queried for a span, the unbounded span will be automatically
-   * added to the map for this thread ID.
-   *
-   */
-  @VisibleForTesting
-  boolean removeActiveSpanFromMap() {
-    // remove from the map
-    activeSpanMap.removeForCurrentThread();
-    if (deactivationsBeforePrune.decrementAndGet() == 0) {
-      // trigger a prune
-      activeSpanMap.prune();
-      deactivationsBeforePrune.set(pruneThreshold);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Get the map of threads to active spans; allows
-   * for testing of weak reference resolution after GC.
-   * @return the span map
-   */
-  @VisibleForTesting
-  WeakReferenceThreadMap<WrappingAuditSpan> getActiveSpanMap() {
-    return activeSpanMap;
   }
 
   /**
@@ -390,39 +294,25 @@ public final class ActiveAuditManagerS3A
   }
 
   /**
-   * Return a list of execution interceptors for the AWS SDK which
+   * Return a request handler for the AWS SDK which
    * relays to this class.
-   * @return a list of execution interceptors.
+   * @return a request handler.
    */
   @Override
-  public List<ExecutionInterceptor> createExecutionInterceptors()
+  public List<RequestHandler2> createRequestHandlers()
       throws IOException {
 
     // wire up the AWS SDK To call back into this class when
     // preparing to make S3 calls.
-    List<ExecutionInterceptor> executionInterceptors = new ArrayList<>();
-    executionInterceptors.add(this);
-
-    final String handlers = getConfig().getTrimmed(AUDIT_REQUEST_HANDLERS, "");
-    if (!handlers.isEmpty()) {
-      // warn and ignore v1 handlers.
-      V2Migration.v1RequestHandlersUsed(handlers);
-    }
-
-    // V2 SDK supports global/service interceptors, but they need to be configured on the
-    // classpath and don't get the filesystem/job configuration passed down.
-    final Class<?>[] interceptors = getConfig().getClasses(AUDIT_EXECUTION_INTERCEPTORS);
-    if (interceptors != null) {
-      for (Class<?> handler : interceptors) {
+    List<RequestHandler2> requestHandlers = new ArrayList<>();
+    requestHandlers.add(new SdkRequestHandler());
+    // now look for any more handlers
+    final Class<?>[] handlers = getConfig().getClasses(AUDIT_REQUEST_HANDLERS);
+    if (handlers != null) {
+      for (Class<?> handler : handlers) {
         try {
-          LOG.debug("Adding intercept of class {}", handler);
           Constructor<?> ctor = handler.getConstructor();
-          final ExecutionInterceptor interceptor = (ExecutionInterceptor) ctor.newInstance();
-          if (interceptor instanceof Configurable) {
-            // pass in the configuration.
-            ((Configurable) interceptor).setConf(getConfig());
-          }
-          executionInterceptors.add(interceptor);
+          requestHandlers.add((RequestHandler2)ctor.newInstance());
         } catch (ExceptionInInitializerError e) {
           throw FutureIO.unwrapInnerException(e);
         } catch (Exception e) {
@@ -430,15 +320,16 @@ public final class ActiveAuditManagerS3A
         }
       }
     }
-    return executionInterceptors;
+    return requestHandlers;
   }
 
   @Override
-  public TransferListener createTransferListener() {
+  public TransferStateChangeListener createStateChangeListener() {
     final WrappingAuditSpan span = activeSpan();
-    return new TransferListener() {
+    return new TransferStateChangeListener() {
       @Override
-      public void transferInitiated(Context.TransferInitiated context) {
+      public void transferStateChanged(final Transfer transfer,
+          final Transfer.TransferState state) {
         switchToActiveSpan(span);
       }
     };
@@ -453,18 +344,20 @@ public final class ActiveAuditManagerS3A
   }
 
   /**
-   * Audit the creation of a request and retrieve
-   * a reference to the active thread span.
+   * Attach a reference to the active thread span, then
+   * invoke the same callback on that active thread.
    */
   @Override
-  public void requestCreated(final SdkRequest.Builder builder) {
+  public <T extends AmazonWebServiceRequest> T requestCreated(
+      final T request) {
     AuditSpanS3A span = getActiveAuditSpan();
     if (LOG.isTraceEnabled()) {
       LOG.trace("Created Request {} in span {}",
-          analyzer.analyze(builder.build()), span);
+          analyzer.analyze(request), span);
     }
+    attachSpanToRequest(request, span);
     try {
-      span.requestCreated(builder);
+      return span.requestCreated(request);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -480,13 +373,14 @@ public final class ActiveAuditManagerS3A
    * {@inheritDoc}
    */
   @Override
-  public void beforeExecution(Context.BeforeExecution context,
-      ExecutionAttributes executionAttributes) {
+  public <T extends AmazonWebServiceRequest> T beforeExecution(
+      final T request) {
     ioStatisticsStore.incrementCounter(AUDIT_REQUEST_EXECUTION.getSymbol());
-    AuditSpanS3A span = getActiveAuditSpan();
-    attachSpanToRequest(executionAttributes, span);
+
+    // identify the span and invoke the callback
     try {
-      span.beforeExecution(context, executionAttributes);
+      return extractAndActivateSpanFromRequest(request)
+          .beforeExecution(request);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -495,14 +389,16 @@ public final class ActiveAuditManagerS3A
 
   /**
    * Forward to active span.
-   * {@inheritDoc}
+   * @param request request
+   * @param response response.
    */
   @Override
-  public void afterExecution(Context.AfterExecution context,
-      ExecutionAttributes executionAttributes) {
+  public void afterResponse(final Request<?> request,
+      final Response<?> response)
+      throws AuditFailureException, SdkBaseException {
     try {
-      extractAndActivateSpanFromRequest(context.request(), executionAttributes)
-          .afterExecution(context, executionAttributes);
+      extractAndActivateSpanFromRequest(request)
+          .afterResponse(request, response);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -510,19 +406,18 @@ public final class ActiveAuditManagerS3A
   }
 
   /**
-   * Get the active span from the execution attributes,
+   * Get the active span from the handler context,
    * falling back to the active thread span if there
-   * is nothing in the attributes.
-   * Provided the span is a wrapped span, the span is
-   * activated.
+   * is nothing in the context.
+   * Provided the span is a wrapped span, the
    * @param request request
-   * @param executionAttributes the execution attributes
-   * @return the active span
+   * @param <T> type of request.
+   * @return the callbacks
    */
-  private AuditSpanS3A extractAndActivateSpanFromRequest(
-      final SdkRequest request,
-      final ExecutionAttributes executionAttributes) {
-    AuditSpanS3A span = retrieveAttachedSpan(executionAttributes);
+  private <T extends HandlerContextAware> AWSAuditEventCallbacks
+      extractAndActivateSpanFromRequest(final T request) {
+    AWSAuditEventCallbacks span;
+    span = retrieveAttachedSpan(request);
     if (span == null) {
       // no span is attached. Not unusual for the copy operations,
       // or for calls to GetBucketLocation made by the AWS client
@@ -545,16 +440,18 @@ public final class ActiveAuditManagerS3A
 
   /**
    * Forward to active span.
-   * @param context execution context
-   * @param executionAttributes the execution attributes
-   * {@inheritDoc}
+   * @param request request
+   * @param response response.
+   * @param exception exception raised.
    */
   @Override
-  public void onExecutionFailure(Context.FailedExecution context,
-      ExecutionAttributes executionAttributes) {
+  public void afterError(final Request<?> request,
+      final Response<?> response,
+      final Exception exception)
+      throws AuditFailureException, SdkBaseException {
     try {
-      extractAndActivateSpanFromRequest(context.request(), executionAttributes).onExecutionFailure(
-          context, executionAttributes);
+      extractAndActivateSpanFromRequest(request)
+          .afterError(request, response, exception);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -562,12 +459,11 @@ public final class ActiveAuditManagerS3A
   }
 
   @Override
-  public SdkRequest modifyRequest(Context.ModifyRequest context,
-      ExecutionAttributes executionAttributes) {
+  public AmazonWebServiceRequest beforeMarshalling(
+      final AmazonWebServiceRequest request) {
     try {
-      return extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .modifyRequest(context, executionAttributes);
+      return extractAndActivateSpanFromRequest(request)
+          .beforeMarshalling(request);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -575,12 +471,10 @@ public final class ActiveAuditManagerS3A
   }
 
   @Override
-  public void beforeMarshalling(Context.BeforeMarshalling context,
-      ExecutionAttributes executionAttributes) {
+  public void beforeRequest(final Request<?> request) {
     try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .beforeMarshalling(context, executionAttributes);
+      extractAndActivateSpanFromRequest(request)
+          .beforeRequest(request);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -588,12 +482,10 @@ public final class ActiveAuditManagerS3A
   }
 
   @Override
-  public void afterMarshalling(Context.AfterMarshalling context,
-      ExecutionAttributes executionAttributes) {
+  public void beforeAttempt(final HandlerBeforeAttemptContext context) {
     try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .afterMarshalling(context, executionAttributes);
+      extractAndActivateSpanFromRequest(context.getRequest())
+          .beforeAttempt(context);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -601,12 +493,10 @@ public final class ActiveAuditManagerS3A
   }
 
   @Override
-  public SdkHttpRequest modifyHttpRequest(Context.ModifyHttpRequest context,
-      ExecutionAttributes executionAttributes) {
+  public void afterAttempt(final HandlerAfterAttemptContext context) {
     try {
-      return extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .modifyHttpRequest(context, executionAttributes);
+      extractAndActivateSpanFromRequest(context.getRequest())
+          .afterAttempt(context);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
@@ -614,80 +504,73 @@ public final class ActiveAuditManagerS3A
   }
 
   @Override
-  public void beforeTransmission(Context.BeforeTransmission context,
-      ExecutionAttributes executionAttributes) {
+  public HttpResponse beforeUnmarshalling(final Request<?> request,
+      final HttpResponse httpResponse) {
     try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .beforeTransmission(context, executionAttributes);
+      extractAndActivateSpanFromRequest(request.getOriginalRequest())
+          .beforeUnmarshalling(request, httpResponse);
     } catch (AuditFailureException e) {
       ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
       throw e;
     }
+    return httpResponse;
   }
 
-  @Override
-  public void afterTransmission(Context.AfterTransmission context,
-      ExecutionAttributes executionAttributes) {
-    try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .afterTransmission(context, executionAttributes);
-    } catch (AuditFailureException e) {
-      ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
-      throw e;
+  /**
+   * Callbacks from the AWS SDK; all forward to the ActiveAuditManagerS3A.
+   * We need a separate class because the SDK requires the handler list
+   * to be list of {@code RequestHandler2} instances.
+   */
+  private class SdkRequestHandler extends RequestHandler2 {
+
+    @Override
+    public AmazonWebServiceRequest beforeExecution(
+        final AmazonWebServiceRequest request) {
+      return ActiveAuditManagerS3A.this.beforeExecution(request);
     }
-  }
 
-  @Override
-  public SdkHttpResponse modifyHttpResponse(Context.ModifyHttpResponse context,
-      ExecutionAttributes executionAttributes) {
-    try {
-      return extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .modifyHttpResponse(context, executionAttributes);
-    } catch (AuditFailureException e) {
-      ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
-      throw e;
+    @Override
+    public void afterResponse(final Request<?> request,
+        final Response<?> response) {
+      ActiveAuditManagerS3A.this.afterResponse(request, response);
     }
-  }
 
-  @Override
-  public void beforeUnmarshalling(Context.BeforeUnmarshalling context,
-      ExecutionAttributes executionAttributes) {
-    try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .beforeUnmarshalling(context, executionAttributes);
-    } catch (AuditFailureException e) {
-      ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
-      throw e;
+    @Override
+    public void afterError(final Request<?> request,
+        final Response<?> response,
+        final Exception e) {
+      ActiveAuditManagerS3A.this.afterError(request, response, e);
     }
-  }
 
-  @Override
-  public void afterUnmarshalling(Context.AfterUnmarshalling context,
-      ExecutionAttributes executionAttributes) {
-    try {
-      extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .afterUnmarshalling(context, executionAttributes);
-    } catch (AuditFailureException e) {
-      ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
-      throw e;
+    @Override
+    public AmazonWebServiceRequest beforeMarshalling(
+        final AmazonWebServiceRequest request) {
+      return ActiveAuditManagerS3A.this.beforeMarshalling(request);
     }
-  }
 
-  @Override
-  public SdkResponse modifyResponse(Context.ModifyResponse context,
-      ExecutionAttributes executionAttributes) {
-    try {
-      return extractAndActivateSpanFromRequest(context.request(),
-          executionAttributes)
-          .modifyResponse(context, executionAttributes);
-    } catch (AuditFailureException e) {
-      ioStatisticsStore.incrementCounter(AUDIT_FAILURE.getSymbol());
-      throw e;
+    @Override
+    public void beforeRequest(final Request<?> request) {
+      ActiveAuditManagerS3A.this.beforeRequest(request);
+    }
+
+    @Override
+    public void beforeAttempt(
+        final HandlerBeforeAttemptContext context) {
+      ActiveAuditManagerS3A.this.beforeAttempt(context);
+    }
+
+    @Override
+    public HttpResponse beforeUnmarshalling(
+        final Request<?> request,
+        final HttpResponse httpResponse) {
+      return ActiveAuditManagerS3A.this.beforeUnmarshalling(request,
+          httpResponse);
+    }
+
+    @Override
+    public void afterAttempt(
+        final HandlerAfterAttemptContext context) {
+      ActiveAuditManagerS3A.this.afterAttempt(context);
     }
   }
 
@@ -697,8 +580,7 @@ public final class ActiveAuditManagerS3A
    * span is deactivated.
    * Package-private for testing.
    */
-  @VisibleForTesting
-  final class WrappingAuditSpan extends AbstractAuditSpanImpl {
+  private final class WrappingAuditSpan extends AbstractAuditSpanImpl {
 
     /**
      * Inner span.
@@ -754,21 +636,16 @@ public final class ActiveAuditManagerS3A
      */
     @Override
     public void deactivate() {
-
-      // span is inactive; ignore
-      if (!isActive()) {
-        return;
-      }
-      // skipped for invalid spans,
+      // no-op for invalid spans,
       // so as to prevent the unbounded span from being closed
       // and everything getting very confused.
-      if (isValid) {
-        // deactivate the span
-        span.deactivate();
+      if (!isValid || !isActive()) {
+        return;
       }
-      // remove the span from the reference map,
-      // sporadically triggering a prune operation.
-      removeActiveSpanFromMap();
+      // deactivate the span
+      span.deactivate();
+      // and go to the unbounded one.
+      switchToActiveSpan(getUnbondedSpan());
     }
 
     /**
@@ -776,8 +653,9 @@ public final class ActiveAuditManagerS3A
      * {@inheritDoc}
      */
     @Override
-    public void requestCreated(final SdkRequest.Builder builder) {
-      span.requestCreated(builder);
+    public <T extends AmazonWebServiceRequest> T requestCreated(
+        final T request) {
+      return span.requestCreated(request);
     }
 
     /**
@@ -791,15 +669,6 @@ public final class ActiveAuditManagerS3A
     }
 
     /**
-     * Get the inner span.
-     * @return the span.
-     */
-    @VisibleForTesting
-    AuditSpanS3A getSpan() {
-      return span;
-    }
-
-    /**
      * Forward to the inner span.
      * {@inheritDoc}
      */
@@ -810,132 +679,79 @@ public final class ActiveAuditManagerS3A
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param request request
+     * @param <T> type of request
+     * @return an updated request.
      */
     @Override
-    public void beforeExecution(Context.BeforeExecution context,
-        ExecutionAttributes executionAttributes) {
-      span.beforeExecution(context, executionAttributes);
+    public <T extends AmazonWebServiceRequest> T beforeExecution(
+        final T request) {
+      return span.beforeExecution(request);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param request request
+     * @param response response.
      */
     @Override
-    public void afterExecution(Context.AfterExecution context,
-        ExecutionAttributes executionAttributes) {
-      span.afterExecution(context, executionAttributes);
+    public void afterResponse(final Request<?> request,
+        final Response<?> response) {
+      span.afterResponse(request, response);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param request request
+     * @param response response.
+     * @param exception exception raised.
      */
     @Override
-    public void onExecutionFailure(Context.FailedExecution context,
-        ExecutionAttributes executionAttributes) {
-      span.onExecutionFailure(context, executionAttributes);
+    public void afterError(final Request<?> request,
+        final Response<?> response,
+        final Exception exception) {
+      span.afterError(request, response, exception);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param request request
+     * @return request to marshall
      */
     @Override
-    public void beforeMarshalling(Context.BeforeMarshalling context,
-        ExecutionAttributes executionAttributes) {
-      span.beforeMarshalling(context, executionAttributes);
+    public AmazonWebServiceRequest beforeMarshalling(
+        final AmazonWebServiceRequest request) {
+      return span.beforeMarshalling(request);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param request request
      */
     @Override
-    public SdkRequest modifyRequest(Context.ModifyRequest context,
-        ExecutionAttributes executionAttributes) {
-      return span.modifyRequest(context, executionAttributes);
+    public void beforeRequest(final Request<?> request) {
+      span.beforeRequest(request);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     * @param context full context, including the request.
      */
     @Override
-    public void afterMarshalling(Context.AfterMarshalling context,
-        ExecutionAttributes executionAttributes) {
-      span.afterMarshalling(context, executionAttributes);
+    public void beforeAttempt(
+        final HandlerBeforeAttemptContext context) {
+      span.beforeAttempt(context);
     }
 
     /**
      * Forward to the inner span.
-     * {@inheritDoc}
+     *
+     * @param context full context, including the request.
      */
     @Override
-    public SdkHttpRequest modifyHttpRequest(Context.ModifyHttpRequest context,
-        ExecutionAttributes executionAttributes) {
-      return span.modifyHttpRequest(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public void beforeTransmission(Context.BeforeTransmission context,
-        ExecutionAttributes executionAttributes) {
-      span.beforeTransmission(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public void afterTransmission(Context.AfterTransmission context,
-        ExecutionAttributes executionAttributes) {
-      span.afterTransmission(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public SdkHttpResponse modifyHttpResponse(Context.ModifyHttpResponse context,
-        ExecutionAttributes executionAttributes) {
-      return span.modifyHttpResponse(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public void beforeUnmarshalling(Context.BeforeUnmarshalling context,
-        ExecutionAttributes executionAttributes) {
-      span.beforeUnmarshalling(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public void afterUnmarshalling(Context.AfterUnmarshalling context,
-        ExecutionAttributes executionAttributes) {
-      span.afterUnmarshalling(context, executionAttributes);
-    }
-
-    /**
-     * Forward to the inner span.
-     * {@inheritDoc}
-     */
-    @Override
-    public SdkResponse modifyResponse(Context.ModifyResponse context,
-        ExecutionAttributes executionAttributes) {
-      return span.modifyResponse(context, executionAttributes);
+    public void afterAttempt(
+        final HandlerAfterAttemptContext context) {
+      span.afterAttempt(context);
     }
 
     @Override
@@ -948,4 +764,5 @@ public final class ActiveAuditManagerS3A
       return sb.toString();
     }
   }
+
 }

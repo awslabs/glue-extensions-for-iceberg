@@ -18,7 +18,6 @@ package software.amazon.glue.s3a.impl;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.AccessDeniedException;
-
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.Retries;
 import software.amazon.glue.s3a.api.RequestFactory;

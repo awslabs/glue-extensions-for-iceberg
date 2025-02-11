@@ -36,5 +36,6 @@ import software.amazon.glue.s3a.auth.NoAwsCredentialsException;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public final class SharedInstanceCredentialProvider extends IAMInstanceCredentialsProvider {
+public final class SharedInstanceCredentialProvider extends
+    IAMInstanceCredentialsProvider {
 }

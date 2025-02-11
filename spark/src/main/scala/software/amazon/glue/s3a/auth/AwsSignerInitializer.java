@@ -16,8 +16,8 @@
 package software.amazon.glue.s3a.auth;
 
 import org.apache.hadoop.conf.Configuration;
-import software.amazon.glue.s3a.auth.delegation.DelegationTokenProvider;
 import software.amazon.glue.s3a.S3AFileSystem;
+import software.amazon.glue.s3a.auth.delegation.DelegationTokenProvider;
 import org.apache.hadoop.security.UserGroupInformation;
 
 /**

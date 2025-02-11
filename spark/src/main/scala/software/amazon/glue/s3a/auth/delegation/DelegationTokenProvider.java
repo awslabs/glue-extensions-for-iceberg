@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.auth.delegation;
 
 import java.io.IOException;
-
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 

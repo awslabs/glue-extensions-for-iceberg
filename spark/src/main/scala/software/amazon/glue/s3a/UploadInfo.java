@@ -15,22 +15,22 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.transfer.s3.model.FileUpload;
+import com.amazonaws.services.s3.transfer.Upload;
 
 /**
  * Simple struct that contains information about a S3 upload.
  */
 public class UploadInfo {
-  private final FileUpload fileUpload;
+  private final Upload upload;
   private final long length;
 
-  public UploadInfo(FileUpload upload, long length) {
-    this.fileUpload = upload;
+  public UploadInfo(Upload upload, long length) {
+    this.upload = upload;
     this.length = length;
   }
 
-  public FileUpload getFileUpload() {
-    return fileUpload;
+  public Upload getUpload() {
+    return upload;
   }
 
   public long getLength() {

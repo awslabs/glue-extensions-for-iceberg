@@ -15,21 +15,16 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.commit.MagicCommitPaths.*;
+
 import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
 import software.amazon.glue.s3a.Statistic;
-import software.amazon.glue.s3a.commit.magic.InMemoryMagicCommitTracker;
-import software.amazon.glue.s3a.commit.magic.S3MagicCommitTracker;
+import software.amazon.glue.s3a.commit.magic.MagicCommitTracker;
 import software.amazon.glue.s3a.impl.AbstractStoreOperation;
-import software.amazon.glue.s3a.statistics.PutTrackerStatistics;
-
-import static software.amazon.glue.s3a.commit.MagicCommitPaths.*;
-import static software.amazon.glue.s3a.commit.magic.MagicCommitTrackerUtils.isTrackMagicCommitsInMemoryEnabled;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Adds the code needed for S3A to support magic committers.
@@ -38,9 +33,8 @@ import static software.amazon.glue.s3a.commit.magic.MagicCommitTrackerUtils.isTr
  * in this case:
  * <ol>
  *   <li>{@link #isMagicCommitPath(Path)} will always return false.</li>
- *   <li>{@link #isUnderMagicPath(Path)} will always return false.</li>
- *   <li>{@link #createTracker(Path, String, PutTrackerStatistics)} will always
- *   return an instance of {@link PutTracker}.</li>
+ *   <li>{@link #createTracker(Path, String)} will always return an instance
+ *   of {@link PutTracker}.</li>
  * </ol>
  *
  * <p>Important</p>: must not directly or indirectly import a class which
@@ -89,11 +83,9 @@ public class MagicCommitIntegration extends AbstractStoreOperation {
    * for the commit tracker.
    * @param path path of nominal write
    * @param key key of path of nominal write
-   * @param trackerStatistics tracker statistics
    * @return the tracker for this operation.
    */
-  public PutTracker createTracker(Path path, String key,
-      PutTrackerStatistics trackerStatistics) {
+  public PutTracker createTracker(Path path, String key) {
     final List<String> elements = splitPathToElements(path);
     PutTracker tracker;
 
@@ -104,15 +96,12 @@ public class MagicCommitIntegration extends AbstractStoreOperation {
         String pendingsetPath = key + CommitConstants.PENDING_SUFFIX;
         getStoreContext().incrementStatistic(
             Statistic.COMMITTER_MAGIC_FILES_CREATED);
-        if (isTrackMagicCommitsInMemoryEnabled(getStoreContext().getConfiguration())) {
-          tracker = new InMemoryMagicCommitTracker(path, getStoreContext().getBucket(),
-              key, destKey, pendingsetPath, owner.getWriteOperationHelper(),
-              trackerStatistics);
-        } else {
-          tracker = new S3MagicCommitTracker(path, getStoreContext().getBucket(),
-              key, destKey, pendingsetPath, owner.getWriteOperationHelper(),
-              trackerStatistics);
-        }
+        tracker = new MagicCommitTracker(path,
+            getStoreContext().getBucket(),
+            key,
+            destKey,
+            pendingsetPath,
+            owner.getWriteOperationHelper());
         LOG.debug("Created {}", tracker);
       } else {
         LOG.warn("File being created has a \"magic\" path, but the filesystem"
@@ -190,13 +179,4 @@ public class MagicCommitIntegration extends AbstractStoreOperation {
         || last.endsWith(CommitConstants.PENDINGSET_SUFFIX);
   }
 
-  /**
-   * Is this path in/under a magic path...regardless of file type.
-   * This is used to optimize create() operations.
-   * @param path path to check
-   * @return true if the path is one a magic file write expects.
-   */
-  public boolean isUnderMagicPath(Path path) {
-    return magicCommitEnabled && isMagicPath(splitPathToElements(path));
-  }
 }

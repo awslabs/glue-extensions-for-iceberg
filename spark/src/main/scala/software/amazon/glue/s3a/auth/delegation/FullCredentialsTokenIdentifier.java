@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.auth.delegation;
 
 import java.net.URI;
-
 import software.amazon.glue.s3a.auth.MarshalledCredentials;
 import org.apache.hadoop.io.Text;
 

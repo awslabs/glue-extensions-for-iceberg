@@ -15,37 +15,38 @@
 
 package software.amazon.glue.s3a.api;
 
-import javax.annotation.Nullable;
+import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.DeleteObjectRequest;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import com.amazonaws.services.s3.model.ListMultipartUploadsRequest;
+import com.amazonaws.services.s3.model.ListNextBatchOfObjectsRequest;
+import com.amazonaws.services.s3.model.ListObjectsRequest;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PartETag;
+import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.SSEAwsKeyManagementParams;
+import com.amazonaws.services.s3.model.SSECustomerKey;
+import com.amazonaws.services.s3.model.SelectObjectContentRequest;
+import com.amazonaws.services.s3.model.UploadPartRequest;
+import java.io.File;
+import java.io.InputStream;
 import java.util.List;
-
-import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListMultipartUploadsRequest;
-import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.StorageClass;
-import software.amazon.awssdk.services.s3.model.UploadPartRequest;
-
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
+import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.hadoop.fs.PathIOException;
 import software.amazon.glue.s3a.S3AEncryptionMethods;
 import software.amazon.glue.s3a.auth.delegation.EncryptionSecrets;
-import software.amazon.glue.s3a.impl.PutObjectOptions;
 
 /**
- * Factory for S3 request objects.
+ * Factory for S3 objects.
  *
  * This is where the owner FS's {@code prepareRequest()}
  * callback is invoked to mark up a request for this span.
@@ -59,8 +60,6 @@ import software.amazon.glue.s3a.impl.PutObjectOptions;
  * as there are no guarantees how they are processed.
  * That is: no guarantees of retry or translation.
  */
-@InterfaceStability.Unstable
-@InterfaceAudience.LimitedPrivate("testing/diagnostics")
 public interface RequestFactory {
 
   /**
@@ -73,7 +72,22 @@ public interface RequestFactory {
    * Get the canned ACL of this FS.
    * @return an ACL, if any
    */
-  String getCannedACL();
+  CannedAccessControlList getCannedACL();
+
+  /**
+   * Create the AWS SDK structure used to configure SSE,
+   * if the encryption secrets contain the information/settings for this.
+   * @return an optional set of KMS Key settings
+   */
+  Optional<SSEAwsKeyManagementParams> generateSSEAwsKeyParams();
+
+  /**
+   * Create the SSE-C structure for the AWS SDK, if the encryption secrets
+   * contain the information/settings for this.
+   * This will contain a secret extracted from the bucket/configuration.
+   * @return an optional customer key.
+   */
+  Optional<SSECustomerKey> generateSSECustomerKey();
 
   /**
    * Get the encryption algorithm of this endpoint.
@@ -82,170 +96,196 @@ public interface RequestFactory {
   S3AEncryptionMethods getServerSideEncryptionAlgorithm();
 
   /**
-   * Get the content encoding (e.g. gzip) or return null if none.
-   * @return content encoding
+   * Create a new object metadata instance.
+   * Any standard metadata headers are added here, for example:
+   * encryption.
+   *
+   * @param length length of data to set in header; Ignored if negative
+   * @return a new metadata instance
    */
-  String getContentEncoding();
+  ObjectMetadata newObjectMetadata(long length);
 
   /**
-   * Get the object storage class, return null if none.
-   * @return storage class
-   */
-  StorageClass getStorageClass();
-
-  /**
-   * Create a copy request builder.
+   * Create a copy request.
    * This includes the work of copying the relevant parts
    * of the metadata from the source
    * @param srcKey source
    * @param dstKey destination
    * @param srcom source object metadata.
-   * @return the request builder
+   * @return the request
    */
-  CopyObjectRequest.Builder newCopyObjectRequestBuilder(String srcKey,
+  CopyObjectRequest newCopyObjectRequest(String srcKey,
       String dstKey,
-      HeadObjectResponse srcom);
-
+      ObjectMetadata srcom);
 
   /**
-   * Create a {@link PutObjectRequest} request builder.
+   * Create a putObject request.
+   * Adds the ACL and metadata
+   * @param key key of object
+   * @param metadata metadata header
+   * @param srcfile source file
+   * @return the request
+   */
+  PutObjectRequest newPutObjectRequest(String key,
+      ObjectMetadata metadata, File srcfile);
+
+  /**
+   * Create a {@link PutObjectRequest} request.
    * The metadata is assumed to have been configured with the size of the
    * operation.
    * @param key key of object
-   * @param options options for the request
-   * @param length length of object to be uploaded
-   * @param isDirectoryMarker true if object to be uploaded is a directory marker
-   * @return the request builder
+   * @param metadata metadata header
+   * @param inputStream source data.
+   * @return the request
    */
-  PutObjectRequest.Builder newPutObjectRequestBuilder(String key,
-      PutObjectOptions options,
-      long length,
-      boolean isDirectoryMarker);
+  PutObjectRequest newPutObjectRequest(String key,
+      ObjectMetadata metadata,
+      InputStream inputStream);
 
   /**
    * Create a {@link PutObjectRequest} request for creating
    * an empty directory.
    *
    * @param directory destination directory.
-   * @return request builder for a zero byte upload.
+   * @return request for a zero byte upload.
    */
-  PutObjectRequest.Builder newDirectoryMarkerRequest(String directory);
+  PutObjectRequest newDirectoryMarkerRequest(String directory);
 
   /**
    * List all multipart uploads under a prefix.
    * @param prefix prefix to list under
-   * @return the request builder.
+   * @return the request.
    */
-  ListMultipartUploadsRequest.Builder newListMultipartUploadsRequestBuilder(
+  ListMultipartUploadsRequest newListMultipartUploadsRequest(
       @Nullable String prefix);
 
   /**
    * Abort a multipart upload.
    * @param destKey destination object key
    * @param uploadId ID of initiated upload
-   * @return the request builder.
+   * @return the request.
    */
-  AbortMultipartUploadRequest.Builder newAbortMultipartUploadRequestBuilder(
+  AbortMultipartUploadRequest newAbortMultipartUploadRequest(
       String destKey,
       String uploadId);
 
   /**
    * Start a multipart upload.
    * @param destKey destination object key
-   * @param options options for the request
-   * @return the request builder.
-   * @throws PathIOException if multipart uploads are disabled
+   * @return the request.
    */
-  CreateMultipartUploadRequest.Builder newMultipartUploadRequestBuilder(
-      String destKey,
-      @Nullable PutObjectOptions options) throws PathIOException;
+  InitiateMultipartUploadRequest newMultipartUploadRequest(
+      String destKey);
 
   /**
    * Complete a multipart upload.
    * @param destKey destination object key
    * @param uploadId ID of initiated upload
    * @param partETags ordered list of etags
-   * @return the request builder.
+   * @return the request.
    */
-  CompleteMultipartUploadRequest.Builder newCompleteMultipartUploadRequestBuilder(
+  CompleteMultipartUploadRequest newCompleteMultipartUploadRequest(
       String destKey,
       String uploadId,
-      List<CompletedPart> partETags);
+      List<PartETag> partETags);
 
   /**
-   * Create a HEAD object request builder.
+   * Create a HEAD request.
    * @param key key, may have trailing /
-   * @return the request builder.
+   * @return the request.
    */
-  HeadObjectRequest.Builder newHeadObjectRequestBuilder(String key);
+  GetObjectMetadataRequest newGetObjectMetadataRequest(String key);
 
   /**
-   * Create a HEAD bucket request builder.
-   * @param bucket bucket to get metadata for
-   * @return the request builder.
-   */
-  HeadBucketRequest.Builder newHeadBucketRequestBuilder(String bucket);
-
-
-  /**
-   * Create a GET request builder.
+   * Create a GET request.
    * @param key object key
-   * @return the request builder.
+   * @return the request.
    */
-  GetObjectRequest.Builder newGetObjectRequestBuilder(String key);
+  GetObjectRequest newGetObjectRequest(String key);
 
   /**
-   * Create and initialize a part request builder of a multipart upload.
-   *
-   * @param destKey      destination key of ongoing operation
-   * @param uploadId     ID of ongoing upload
-   * @param partNumber   current part number of the upload
-   * @param size         amount of data
-   * @return the request builder.
+   * Create and initialize a part request of a multipart upload.
+   * Exactly one of: {@code uploadStream} or {@code sourceFile}
+   * must be specified.
+   * A subset of the file may be posted, by providing the starting point
+   * in {@code offset} and a length of block in {@code size} equal to
+   * or less than the remaining bytes.
+   * @param destKey destination key of ongoing operation
+   * @param uploadId ID of ongoing upload
+   * @param partNumber current part number of the upload
+   * @param size amount of data
+   * @param uploadStream source of data to upload
+   * @param sourceFile optional source file.
+   * @param offset offset in file to start reading.
+   * @return the request.
    * @throws PathIOException if the part number is out of range.
    */
-  UploadPartRequest.Builder newUploadPartRequestBuilder(
+  UploadPartRequest newUploadPartRequest(
       String destKey,
       String uploadId,
       int partNumber,
-      long size) throws PathIOException;
+      int size,
+      InputStream uploadStream,
+      File sourceFile,
+      long offset) throws PathIOException;
 
   /**
-   * Create the (legacy) V1 list request builder.
+   * Create a S3 Select request for the destination object.
+   * This does not build the query.
+   * @param key object key
+   * @return the request
+   */
+  SelectObjectContentRequest newSelectRequest(String key);
+
+  /**
+   * Create the (legacy) V1 list request.
    * @param key key to list under
    * @param delimiter delimiter for keys
    * @param maxKeys maximum number in a list page.
-   * @return the request builder.
+   * @return the request
    */
-  ListObjectsRequest.Builder newListObjectsV1RequestBuilder(String key,
+  ListObjectsRequest newListObjectsV1Request(String key,
       String delimiter,
       int maxKeys);
 
   /**
-   * Create a V2 list request builder.
+   * Create the next V1 page list request, following
+   * on from the previous response.
+   * @param prev previous response
+   * @return the request
+   */
+
+  ListNextBatchOfObjectsRequest newListNextBatchOfObjectsRequest(
+      ObjectListing prev);
+
+  /**
+   * Create a V2 list request.
    * This will be recycled for any subsequent requests.
    * @param key key to list under
    * @param delimiter delimiter for keys
    * @param maxKeys maximum number in a list page.
-   * @return the request builder.
+   * @return the request
    */
-  ListObjectsV2Request.Builder newListObjectsV2RequestBuilder(String key,
+  ListObjectsV2Request newListObjectsV2Request(String key,
       String delimiter,
       int maxKeys);
 
   /**
-   * Create a request builder to delete a single object.
+   * Create a request to delete a single object.
    * @param key object to delete
-   * @return the request builder.
+   * @return the request
    */
-  DeleteObjectRequest.Builder newDeleteObjectRequestBuilder(String key);
+  DeleteObjectRequest newDeleteObjectRequest(String key);
 
   /**
-   * Create a request builder to delete objects in bulk.
+   * Bulk delete request.
    * @param keysToDelete list of keys to delete.
-   * @return the request builder.
+   * @param quiet should a bulk query be quiet, or should its result list
+   * all deleted keys?
+   * @return the request
    */
-  DeleteObjectsRequest.Builder newBulkDeleteRequestBuilder(
-          List<ObjectIdentifier> keysToDelete);
+  DeleteObjectsRequest newBulkDeleteRequest(
+      List<DeleteObjectsRequest.KeyVersion> keysToDelete,
+      boolean quiet);
 
 }

@@ -41,7 +41,7 @@ public final class S3AAuditConstants {
    * Default auditing flag.
    * Value: {@value}.
    */
-  public static final boolean AUDIT_ENABLED_DEFAULT = true;
+  public static final boolean AUDIT_ENABLED_DEFAULT = false;
 
 
   /**
@@ -54,28 +54,21 @@ public final class S3AAuditConstants {
    * Classname of the logging auditor: {@value}.
    */
   public static final String LOGGING_AUDIT_SERVICE =
-      "org.apache.hadoop.fs.s3a.audit.impl.LoggingAuditor";
+      "software.amazon.glue.s3a.audit.impl.LoggingAuditor";
 
   /**
    * Classname of the No-op auditor: {@value}.
    */
   public static final String NOOP_AUDIT_SERVICE =
-      "org.apache.hadoop.fs.s3a.audit.impl.NoopAuditor";
+      "software.amazon.glue.s3a.audit.impl.NoopAuditor";
 
   /**
-   * Deprecated list of extra AWS SDK request handlers: {@value}.
-   * Use {@link #AUDIT_EXECUTION_INTERCEPTORS} instead.
-   */
-  public static final String AUDIT_REQUEST_HANDLERS =
-      "fs.s3a.audit.request.handlers";
-
-  /**
-   * List of extra AWS SDK execution interceptors: {@value}.
+   * List of extra AWS SDK request handlers: {@value}.
    * These are added to the SDK request chain <i>after</i>
    * any audit service.
    */
-  public static final String AUDIT_EXECUTION_INTERCEPTORS =
-      "fs.s3a.audit.execution.interceptors";
+  public static final String AUDIT_REQUEST_HANDLERS =
+      "fs.s3a.audit.request.handlers";
 
   /**
    * Should operations outside spans be rejected?

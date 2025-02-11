@@ -1,24 +1,23 @@
 /*
- * Copyright amazon.com, Inc. Or Its AFFILIATES. all rights reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
- * licensed under the apache License, version 2.0 (the "license").
- * you may not use this file except in Compliance WITH the license.
- * a copy of the license Is Located At
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
  *
- *  http://aws.amazon.Com/apache2.0
+ *  http://aws.amazon.com/apache2.0
  *
- * or in the "license" file accompanying this file. this File Is distributed
- * on an "as is" basis, Without warranties or conditions of any kind, EITHER
- * express or Implied. see the license for the specific language governing
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsCredentials;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AnonymousAWSCredentials;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
@@ -32,18 +31,19 @@ import org.apache.hadoop.classification.InterfaceStability;
  * Please note that users may reference this class name from configuration
  * property fs.s3a.aws.credentials.provider.  Therefore, changing the class name
  * would be a backward-incompatible change.
- *
  */
 @InterfaceAudience.Private
 @InterfaceStability.Stable
-public class AnonymousAWSCredentialsProvider implements AwsCredentialsProvider {
+public class AnonymousAWSCredentialsProvider implements AWSCredentialsProvider {
 
   public static final String NAME
-      = "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider";
+      = "software.amazon.glue.s3a.AnonymousAWSCredentialsProvider";
 
-  public AwsCredentials resolveCredentials() {
-    return AnonymousCredentialsProvider.create().resolveCredentials();
+  public AWSCredentials getCredentials() {
+    return new AnonymousAWSCredentials();
   }
+
+  public void refresh() {}
 
   @Override
   public String toString() {

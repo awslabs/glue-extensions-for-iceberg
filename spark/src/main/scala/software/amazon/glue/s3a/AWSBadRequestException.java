@@ -15,9 +15,8 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
-
-import static software.amazon.glue.s3a.impl.InternalConstants.SC_400_BAD_REQUEST;
+import com.amazonaws.AmazonServiceException;
+import software.amazon.glue.s3a.AWSServiceIOException;
 
 /**
  * A 400 "Bad Request" exception was received.
@@ -27,7 +26,7 @@ public class AWSBadRequestException extends AWSServiceIOException {
   /**
    * HTTP status code which signals this failure mode was triggered: {@value}.
    */
-  public static final int STATUS_CODE = SC_400_BAD_REQUEST;
+  public static final int STATUS_CODE = 400;
 
   /**
    * Instantiate.
@@ -35,7 +34,7 @@ public class AWSBadRequestException extends AWSServiceIOException {
    * @param cause the underlying cause
    */
   public AWSBadRequestException(String operation,
-      AwsServiceException cause) {
+      AmazonServiceException cause) {
     super(operation, cause);
   }
 }

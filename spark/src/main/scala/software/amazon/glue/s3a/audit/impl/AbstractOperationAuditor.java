@@ -17,13 +17,10 @@ package software.amazon.glue.s3a.audit.impl;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-
 import software.amazon.glue.s3a.audit.OperationAuditor;
 import software.amazon.glue.s3a.audit.OperationAuditorOptions;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
 import org.apache.hadoop.service.AbstractService;
-
-import static java.util.Objects.requireNonNull;
 
 /**
  * This is a long-lived service which is created in S3A FS initialize
@@ -84,7 +81,7 @@ public abstract class AbstractOperationAuditor extends AbstractService
   @Override
   public void init(final OperationAuditorOptions opts) {
     this.options = opts;
-    this.iostatistics = requireNonNull(opts.getIoStatisticsStore());
+    this.iostatistics = opts.getIoStatisticsStore();
     init(opts.getConfiguration());
   }
 

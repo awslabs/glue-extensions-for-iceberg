@@ -15,21 +15,19 @@
 
 package software.amazon.glue.s3a.auth;
 
+import static software.amazon.glue.s3a.auth.RoleModel.*;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
-import org.apache.hadoop.util.Lists;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-
-import static software.amazon.glue.s3a.auth.RoleModel.*;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Lists;
 
 /**
  * Operations, statements and policies covering the operations
- * needed to work with S3.
+ * needed to work with S3 and S3Guard.
  */
 @InterfaceAudience.LimitedPrivate("Tests")
 @InterfaceStability.Unstable
@@ -77,7 +75,7 @@ public final class RolePolicies {
    * Statement to allow KMS R/W access access, so full use of
    * SSE-KMS.
    */
-  public static final Statement STATEMENT_ALLOW_KMS_RW =
+  public static final Statement STATEMENT_ALLOW_SSE_KMS_RW =
       statement(true, KMS_ALL_KEYS, KMS_ALL_OPERATIONS);
 
   /**
@@ -196,13 +194,8 @@ public final class RolePolicies {
   public static final String S3_RESTORE_OBJECT = "s3:RestoreObject";
 
   /**
-   * S3Express session permission; required unless sessions are disabled.
-   */
-  public static final String S3EXPRESS_CREATE_SESSION_POLICY = "s3express:CreateSession";
-
-  /**
    * Actions needed to read a file in S3 through S3A, excluding
-   * SSE-KMS.
+   * S3Guard and SSE-KMS.
    */
   private static final String[] S3_PATH_READ_OPERATIONS =
       new String[]{
@@ -215,13 +208,14 @@ public final class RolePolicies {
    * <ol>
    *   <li>bucket-level operations</li>
    *   <li>SSE-KMS key operations</li>
+   *   <li>DynamoDB operations for S3Guard.</li>
    * </ol>
    * As this excludes the bucket list operations, it is not sufficient
    * to read from a bucket on its own.
    */
   private static final String[] S3_ROOT_READ_OPERATIONS =
       new String[]{
-          S3_ALL_GET
+          S3_ALL_GET,
       };
 
   public static final List<String> S3_ROOT_READ_OPERATIONS_LIST =
@@ -231,18 +225,19 @@ public final class RolePolicies {
    * Policies which can be applied to bucket resources for read operations.
    * <ol>
    *   <li>SSE-KMS key operations</li>
+   *   <li>DynamoDB operations for S3Guard.</li>
    * </ol>
    */
   public static final String[] S3_BUCKET_READ_OPERATIONS =
       new String[]{
           S3_ALL_GET,
-          S3_BUCKET_ALL_LIST
+          S3_BUCKET_ALL_LIST,
       };
 
   /**
    * Actions needed to write data to an S3A Path.
    * This includes the appropriate read operations, but
-   * not SSE-KMS support.
+   * not SSE-KMS or S3Guard support.
    */
   public static final List<String> S3_PATH_RW_OPERATIONS =
       Collections.unmodifiableList(Arrays.asList(new String[]{
@@ -250,7 +245,7 @@ public final class RolePolicies {
           S3_PUT_OBJECT,
           S3_PUT_OBJECT_ACL,
           S3_DELETE_OBJECT,
-          S3_ABORT_MULTIPART_UPLOAD
+          S3_ABORT_MULTIPART_UPLOAD,
       }));
 
   /**
@@ -258,7 +253,7 @@ public final class RolePolicies {
    * This is purely the extra operations needed for writing atop
    * of the read operation set.
    * Deny these and a path is still readable, but not writeable.
-   * Excludes: bucket-ARN and SSE-KMS permissions.
+   * Excludes: bucket-ARN, SSE-KMS and S3Guard permissions.
    */
   public static final List<String> S3_PATH_WRITE_OPERATIONS =
       Collections.unmodifiableList(Arrays.asList(new String[]{
@@ -270,7 +265,7 @@ public final class RolePolicies {
 
   /**
    * Actions needed for R/W IO from the root of a bucket.
-   * Excludes: bucket-ARN and SSE-KMS permissions.
+   * Excludes: bucket-ARN, SSE-KMS and S3Guard permissions.
    */
   public static final List<String> S3_ROOT_RW_OPERATIONS =
       Collections.unmodifiableList(Arrays.asList(new String[]{
@@ -278,12 +273,82 @@ public final class RolePolicies {
           S3_PUT_OBJECT,
           S3_PUT_OBJECT_ACL,
           S3_DELETE_OBJECT,
-          S3_ABORT_MULTIPART_UPLOAD
+          S3_ABORT_MULTIPART_UPLOAD,
       }));
 
   /**
+   * All DynamoDB operations: {@value}.
+   */
+  public static final String DDB_ALL_OPERATIONS = "dynamodb:*";
+
+  /**
+   * Operations needed for DDB/S3Guard Admin.
+   * For now: make this {@link #DDB_ALL_OPERATIONS}.
+   */
+  public static final String DDB_ADMIN = DDB_ALL_OPERATIONS;
+
+  /**
+   * Permission for DDB describeTable() operation: {@value}.
+   * This is used during initialization.
+   */
+  public static final String DDB_DESCRIBE_TABLE = "dynamodb:DescribeTable";
+
+  /**
+   * Permission to query the DDB table: {@value}.
+   */
+  public static final String DDB_QUERY = "dynamodb:Query";
+
+  /**
+   * Permission for DDB operation to get a record: {@value}.
+   */
+  public static final String DDB_GET_ITEM = "dynamodb:GetItem";
+
+  /**
+   * Permission for DDB write record operation: {@value}.
+   */
+  public static final String DDB_PUT_ITEM = "dynamodb:PutItem";
+
+  /**
+   * Permission for DDB update single item operation: {@value}.
+   */
+  public static final String DDB_UPDATE_ITEM = "dynamodb:UpdateItem";
+
+  /**
+   * Permission for DDB delete operation: {@value}.
+   */
+  public static final String DDB_DELETE_ITEM = "dynamodb:DeleteItem";
+
+  /**
+   * Permission for DDB operation: {@value}.
+   */
+  public static final String DDB_BATCH_GET_ITEM = "dynamodb:BatchGetItem";
+
+  /**
+   * Batch write permission for DDB: {@value}.
+   */
+  public static final String DDB_BATCH_WRITE_ITEM = "dynamodb:BatchWriteItem";
+
+  /**
+   * All DynamoDB tables: {@value}.
+   */
+  public static final String ALL_DDB_TABLES = "arn:aws:dynamodb:*";
+
+  /**
+   * Statement to allow all DDB access.
+   */
+  public static final Statement STATEMENT_ALL_DDB =
+      allowAllDynamoDBOperations(ALL_DDB_TABLES);
+
+  /**
+   * Statement to allow all client operations needed for S3Guard,
+   * but none of the admin operations.
+   */
+  public static final Statement STATEMENT_S3GUARD_CLIENT =
+      allowS3GuardClientOperations(ALL_DDB_TABLES);
+
+  /**
    * Allow all S3 Operations.
-   * This does not cover S3-KMS
+   * This does not cover DDB or S3-KMS
    */
   public static final Statement STATEMENT_ALL_S3 = statement(true,
       S3_ALL_BUCKETS,
@@ -297,6 +362,36 @@ public final class RolePolicies {
       statement(true,
           S3_ALL_BUCKETS,
           S3_GET_BUCKET_LOCATION);
+
+  /**
+   * Policy for all S3 and S3Guard operations, and SSE-KMS.
+   */
+  public static final Policy ALLOW_S3_AND_SGUARD = policy(
+      STATEMENT_ALL_S3,
+      STATEMENT_ALL_DDB,
+      STATEMENT_ALLOW_SSE_KMS_RW,
+      STATEMENT_ALL_S3_GET_BUCKET_LOCATION
+  );
+
+  public static Statement allowS3GuardClientOperations(String tableArn) {
+    return statement(true,
+        tableArn,
+        DDB_BATCH_GET_ITEM,
+        DDB_BATCH_WRITE_ITEM,
+        DDB_DELETE_ITEM,
+        DDB_DESCRIBE_TABLE,
+        DDB_GET_ITEM,
+        DDB_PUT_ITEM,
+        DDB_QUERY,
+        DDB_UPDATE_ITEM
+    );
+  }
+
+  public static Statement allowAllDynamoDBOperations(String tableArn) {
+    return statement(true,
+        tableArn,
+        DDB_ALL_OPERATIONS);
+  }
 
   /**
    * From an S3 bucket name, build an ARN to refer to it.

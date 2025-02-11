@@ -15,11 +15,9 @@
 
 package software.amazon.glue.s3a.commit;
 
+import com.amazonaws.services.s3.model.PartETag;
 import java.io.IOException;
 import java.util.List;
-
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 
@@ -73,7 +71,7 @@ public class PutTracker {
    * @throws IOException I/O problem or validation failure.
    */
   public boolean aboutToComplete(String uploadId,
-      List<CompletedPart> parts,
+      List<PartETag> parts,
       long bytesWritten,
       final IOStatistics iostatistics)
       throws IOException {

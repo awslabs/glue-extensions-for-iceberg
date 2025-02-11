@@ -15,6 +15,12 @@
 
 package software.amazon.glue.s3a.auth;
 
+import static java.util.Objects.requireNonNull;
+import static org.apache.commons.lang3.StringUtils.isNotEmpty;
+import static software.amazon.glue.s3a.Constants.ACCESS_KEY;
+import static software.amazon.glue.s3a.Constants.SECRET_KEY;
+import static software.amazon.glue.s3a.Constants.SESSION_TOKEN;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -25,21 +31,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.Objects;
 import java.util.Optional;
-
-import org.apache.hadoop.classification.VisibleForTesting;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.S3AUtils;
 import software.amazon.glue.s3a.auth.delegation.DelegationTokenIOException;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
-
-import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang3.StringUtils.isNotEmpty;
-import static software.amazon.glue.s3a.Constants.ACCESS_KEY;
-import static software.amazon.glue.s3a.Constants.SECRET_KEY;
-import static software.amazon.glue.s3a.Constants.SESSION_TOKEN;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 
 /**
  * Stores the credentials for a session or for a full login.

@@ -15,6 +15,14 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static software.amazon.glue.s3a.Statistic.DELEGATION_TOKENS_ISSUED;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DEFAULT_DELEGATION_TOKEN_BINDING;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_BINDING;
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DURATION_LOG_AT_INFO;
+import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.trackDuration;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkArgument;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkState;
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.EnumSet;
@@ -22,11 +30,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
@@ -40,15 +43,10 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.DelegationTokenIssuer;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.service.ServiceOperations;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.util.DurationInfo;
-
-import static software.amazon.glue.s3a.Statistic.DELEGATION_TOKENS_ISSUED;
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.trackDuration;
-import static org.apache.hadoop.util.Preconditions.checkArgument;
-import static org.apache.hadoop.util.Preconditions.checkState;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DEFAULT_DELEGATION_TOKEN_BINDING;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DELEGATION_TOKEN_BINDING;
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.DURATION_LOG_AT_INFO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Support for creating a DT from a filesystem.
@@ -118,14 +116,15 @@ public class S3ADelegationTokens extends AbstractDTService {
   private AbstractDelegationTokenBinding tokenBinding;
 
   /**
-   * delegation binding information; unset until {@link #bindToDelegationToken(Token)}.
+   * List of cred providers; unset until {@link #bindToDelegationToken(Token)}.
    */
-  private Optional<DelegationBindingInfo> bindingInfo
+  private Optional<AWSCredentialProviderList> credentialProviders
       = Optional.empty();
 
   /**
    * The access policies we want for operations.
-   * There's no attempt to ask for "admin" permissions here.
+   * There's no attempt to ask for "admin" permissions here, e.g.
+   * those to manipulate S3Guard tables.
    */
   protected static final EnumSet<AWSPolicyProvider.AccessLevel> ACCESS_POLICY
       = EnumSet.of(
@@ -232,7 +231,10 @@ public class S3ADelegationTokens extends AbstractDTService {
 
   /**
    * Perform the unbonded deployment operations.
-   * Create and store the binding information.
+   * Create the AWS credential provider chain to use
+   * when talking to AWS when there is no delegation token to work with.
+   * authenticating this client with AWS services, and saves it
+   * to {@link #credentialProviders}
    *
    * @throws IOException any failure.
    */
@@ -242,7 +244,7 @@ public class S3ADelegationTokens extends AbstractDTService {
     checkState(!isBoundToDT(),
         "Already Bound to a delegation token");
     LOG.debug("No delegation tokens present: using direct authentication");
-    bindingInfo = Optional.of(tokenBinding.deploy(null));
+    credentialProviders = Optional.of(tokenBinding.deployUnbonded());
   }
 
   /**
@@ -254,12 +256,12 @@ public class S3ADelegationTokens extends AbstractDTService {
    * <ol>
    *   <li>{@link #boundDT} is set to the retrieved token.</li>
    *   <li>{@link #decodedIdentifier} is set to the extracted identifier.</li>
-   *   <li>{@link #bindingInfo} is set to the information
-   *   returned by the token binding.</li>
+   *   <li>{@link #credentialProviders} is set to the credential
+   *   provider(s) returned by the token binding.</li>
    * </ol>
    * If unsuccessful, {@link #deployUnbonded()} is called for the
    * unbonded codepath instead, which will set
-   * {@link #bindingInfo} to its value.
+   * {@link #credentialProviders} to its value.
    *
    * This means after this call (and only after) the token operations
    * can be invoked.
@@ -270,14 +272,14 @@ public class S3ADelegationTokens extends AbstractDTService {
    * @throws IOException selection/extraction/validation failure.
    */
   private void bindToAnyDelegationToken() throws IOException {
-    checkState(!bindingInfo.isPresent(), E_ALREADY_DEPLOYED);
+    checkState(!credentialProviders.isPresent(), E_ALREADY_DEPLOYED);
     Token<AbstractS3ATokenIdentifier> token = selectTokenFromFSOwner();
     if (token != null) {
       bindToDelegationToken(token);
     } else {
       deployUnbonded();
     }
-    if (getCredentialProviders().size() == 0) {
+    if (credentialProviders.get().size() == 0) {
       throw new DelegationTokenIOException("No AWS credential providers"
           + " created by Delegation Token Binding "
           + tokenBinding.getName());
@@ -300,7 +302,7 @@ public class S3ADelegationTokens extends AbstractDTService {
   @VisibleForTesting
   void resetTokenBindingToDT(final Token<AbstractS3ATokenIdentifier> token)
       throws IOException{
-    bindingInfo = Optional.empty();
+    credentialProviders = Optional.empty();
     bindToDelegationToken(token);
   }
 
@@ -311,8 +313,8 @@ public class S3ADelegationTokens extends AbstractDTService {
    * <ol>
    *   <li>{@link #boundDT} is set to {@code token}.</li>
    *   <li>{@link #decodedIdentifier} is set to the extracted identifier.</li>
-   *   <li>{@link #bindingInfo} is set to the info
-   *    returned by the token binding.</li>
+   *   <li>{@link #credentialProviders} is set to the credential
+   *   provider(s) returned by the token binding.</li>
    * </ol>
    * @param token token to decode and bind to.
    * @throws IOException selection/extraction/validation failure.
@@ -321,7 +323,7 @@ public class S3ADelegationTokens extends AbstractDTService {
   public void bindToDelegationToken(
       final Token<AbstractS3ATokenIdentifier> token)
       throws IOException {
-    checkState(!bindingInfo.isPresent(), E_ALREADY_DEPLOYED);
+    checkState(!credentialProviders.isPresent(), E_ALREADY_DEPLOYED);
     boundDT = Optional.of(token);
     AbstractS3ATokenIdentifier dti = extractIdentifier(token);
     LOG.info("Using delegation token {}", dti);
@@ -329,7 +331,8 @@ public class S3ADelegationTokens extends AbstractDTService {
     try (DurationInfo ignored = new DurationInfo(LOG, DURATION_LOG_AT_INFO,
         "Creating Delegation Token")) {
       // extract the credential providers.
-      bindingInfo = Optional.of(tokenBinding.deploy(dti));
+      credentialProviders = Optional.of(
+          tokenBinding.bindToTokenIdentifier(dti));
     }
   }
 
@@ -412,6 +415,8 @@ public class S3ADelegationTokens extends AbstractDTService {
     requireServiceStarted();
     checkArgument(encryptionSecrets != null,
         "Null encryption secrets");
+    // this isn't done in in advance as it needs S3Guard initialized in the
+    // filesystem before it can generate complete policies.
     List<RoleModel.Statement> statements = getPolicyProvider()
         .listAWSPolicyRules(ACCESS_POLICY);
     Optional<RoleModel.Policy> rolePolicy =
@@ -463,9 +468,8 @@ public class S3ADelegationTokens extends AbstractDTService {
    */
   public AWSCredentialProviderList getCredentialProviders()
       throws IOException {
-    return bindingInfo.map(DelegationBindingInfo::getCredentialProviders)
-        .orElseThrow(() ->
-            new DelegationTokenIOException("Not yet bonded"));
+    return credentialProviders.orElseThrow(
+        () -> new DelegationTokenIOException("Not yet bonded"));
   }
 
   /**

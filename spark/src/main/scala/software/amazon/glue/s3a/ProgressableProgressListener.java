@@ -15,73 +15,76 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.transfer.s3.model.ObjectTransfer;
-import software.amazon.awssdk.transfer.s3.progress.TransferListener;
+import static com.amazonaws.event.ProgressEventType.TRANSFER_COMPLETED_EVENT;
+import static com.amazonaws.event.ProgressEventType.TRANSFER_PART_STARTED_EVENT;
+
+import com.amazonaws.event.ProgressEvent;
+import com.amazonaws.event.ProgressEventType;
+import com.amazonaws.event.ProgressListener;
+import com.amazonaws.services.s3.transfer.Upload;
+import software.amazon.glue.s3a.S3AFileSystem;
 import org.apache.hadoop.util.Progressable;
 import org.slf4j.Logger;
-
 
 /**
  * Listener to progress from AWS regarding transfers.
  */
-public class ProgressableProgressListener implements TransferListener {
+public class ProgressableProgressListener implements ProgressListener {
   private static final Logger LOG = S3AFileSystem.LOG;
-  private final S3AStore store;
+  private final S3AFileSystem fs;
   private final String key;
   private final Progressable progress;
   private long lastBytesTransferred;
+  private final Upload upload;
 
   /**
    * Instantiate.
-   * @param store store: will be invoked with statistics updates
+   * @param fs filesystem: will be invoked with statistics updates
    * @param key key for the upload
+   * @param upload source of events
    * @param progress optional callback for progress.
    */
-  public ProgressableProgressListener(S3AStore store,
+  public ProgressableProgressListener(S3AFileSystem fs,
       String key,
+      Upload upload,
       Progressable progress) {
-    this.store = store;
+    this.fs = fs;
     this.key = key;
+    this.upload = upload;
     this.progress = progress;
     this.lastBytesTransferred = 0;
   }
 
   @Override
-  public void transferInitiated(Context.TransferInitiated context) {
-    store.incrementWriteOperations();
-  }
-
-  @Override
-  public void transferComplete(Context.TransferComplete context) {
-    store.incrementWriteOperations();
-  }
-
-  @Override
-  public void bytesTransferred(Context.BytesTransferred context) {
-
-    if(progress != null) {
+  public void progressChanged(ProgressEvent progressEvent) {
+    if (progress != null) {
       progress.progress();
     }
 
-    long transferred = context.progressSnapshot().transferredBytes();
+    // There are 3 http ops here, but this should be close enough for now
+    ProgressEventType pet = progressEvent.getEventType();
+    if (pet == TRANSFER_PART_STARTED_EVENT ||
+        pet == TRANSFER_COMPLETED_EVENT) {
+      fs.incrementWriteOperations();
+    }
+
+    long transferred = upload.getProgress().getBytesTransferred();
     long delta = transferred - lastBytesTransferred;
-    store.incrementPutProgressStatistics(key, delta);
+    fs.incrementPutProgressStatistics(key, delta);
     lastBytesTransferred = transferred;
   }
 
   /**
    * Method to invoke after upload has completed.
    * This can handle race conditions in setup/teardown.
-   * @param upload upload which has just completed.
    * @return the number of bytes which were transferred after the notification
    */
-  public long uploadCompleted(ObjectTransfer upload) {
-
-    long delta =
-        upload.progress().snapshot().transferredBytes() - lastBytesTransferred;
+  public long uploadCompleted() {
+    long delta = upload.getProgress().getBytesTransferred() -
+        lastBytesTransferred;
     if (delta > 0) {
       LOG.debug("S3A write delta changed after finished: {} bytes", delta);
-      store.incrementPutProgressStatistics(key, delta);
+      fs.incrementPutProgressStatistics(key, delta);
     }
     return delta;
   }

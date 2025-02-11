@@ -15,16 +15,16 @@
 
 package software.amazon.glue.s3a;
 
+import com.amazonaws.services.s3.transfer.model.CopyResult;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.Path;
-import software.amazon.glue.s3a.S3AEncryptionMethods;
 import software.amazon.glue.s3a.S3AInputStream;
 
 /**
- * This class holds attributes of an object independent of the
+ * This class holds attributed of an object independent of the
  * file status type.
- * It is used in {@link S3AInputStream} and elsewhere.
+ * It is used in {@link S3AInputStream} and the select equivalent.
  * as a way to reduce parameters being passed
  * to the constructor of such class,
  * and elsewhere to be a source-neutral representation of a file status.
@@ -41,17 +41,6 @@ public class S3ObjectAttributes {
   private final String versionId;
   private final long len;
 
-  /**
-   * Constructor.
-   * @param bucket s3 bucket
-   * @param path path
-   * @param key object key
-   * @param serverSideEncryptionAlgorithm current encryption algorithm
-   * @param serverSideEncryptionKey any server side encryption key?
-   * @param len object length
-   * @param eTag optional etag
-   * @param versionId optional version id
-   */
   public S3ObjectAttributes(
       String bucket,
       Path path,
@@ -68,6 +57,31 @@ public class S3ObjectAttributes {
     this.serverSideEncryptionKey = serverSideEncryptionKey;
     this.eTag = eTag;
     this.versionId = versionId;
+    this.len = len;
+  }
+
+  /**
+   * Construct from the result of a copy and those parameters
+   * which aren't included in an AWS SDK response.
+   * @param path
+   * @param copyResult copy result.
+   * @param serverSideEncryptionAlgorithm current encryption algorithm
+   * @param serverSideEncryptionKey any server side encryption key?
+   * @param len
+   */
+  public S3ObjectAttributes(
+      final Path path,
+      final CopyResult copyResult,
+      final S3AEncryptionMethods serverSideEncryptionAlgorithm,
+      final String serverSideEncryptionKey,
+      final long len) {
+    this.bucket = copyResult.getDestinationBucketName();
+    this.key = copyResult.getDestinationKey();
+    this.path = path;
+    this.serverSideEncryptionAlgorithm = serverSideEncryptionAlgorithm;
+    this.serverSideEncryptionKey = serverSideEncryptionKey;
+    this.eTag = copyResult.getETag();
+    this.versionId = copyResult.getVersionId();
     this.len = len;
   }
 

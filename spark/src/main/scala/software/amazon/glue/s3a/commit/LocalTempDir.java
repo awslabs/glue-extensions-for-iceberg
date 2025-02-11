@@ -15,15 +15,14 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.Constants.BUFFER_DIR;
+
 import java.io.File;
 import java.io.IOException;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.LocalDirAllocator;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.Constants;
-
-import static software.amazon.glue.s3a.Constants.BUFFER_DIR;
 
 /**
  * A class which manages access to a temporary directory store, uses the

@@ -15,22 +15,26 @@
 
 package software.amazon.glue.s3a.impl;
 
+import static software.amazon.glue.s3a.Constants.FS_S3A_BLOCK_SIZE;
+import static software.amazon.glue.s3a.S3AUtils.objectRepresentsDirectory;
+import static software.amazon.glue.s3a.impl.CallableSupplier.submit;
+import static software.amazon.glue.s3a.impl.CallableSupplier.waitForCompletion;
+import static software.amazon.glue.s3a.impl.InternalConstants.DEFAULT_BLOCKSIZE;
+import static software.amazon.glue.s3a.impl.InternalConstants.RENAME_PARALLEL_LIMIT;
+import static org.apache.hadoop.fs.store.audit.AuditingFunctions.callableWithinAuditSpan;
+import static org.apache.hadoop.thirdparty.com.google.common.base.Preconditions.checkNotNull;
+
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.transfer.model.CopyResult;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
-
-import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
-import software.amazon.glue.s3a.Invoker;
 import software.amazon.glue.s3a.RenameFailedException;
 import software.amazon.glue.s3a.Retries;
 import software.amazon.glue.s3a.S3AFileStatus;
@@ -38,29 +42,30 @@ import software.amazon.glue.s3a.S3ALocatedFileStatus;
 import software.amazon.glue.s3a.S3AReadOpContext;
 import software.amazon.glue.s3a.S3ObjectAttributes;
 import software.amazon.glue.s3a.Tristate;
+import software.amazon.glue.s3a.s3guard.MetadataStore;
+import software.amazon.glue.s3a.s3guard.RenameTracker;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Lists;
 import org.apache.hadoop.util.DurationInfo;
 import org.apache.hadoop.util.OperationDuration;
-
-import static software.amazon.glue.s3a.S3AUtils.translateException;
-import static software.amazon.glue.s3a.impl.CallableSupplier.waitForCompletionIgnoringExceptions;
-import static org.apache.hadoop.fs.store.audit.AuditingFunctions.callableWithinAuditSpan;
-import static software.amazon.glue.s3a.impl.CallableSupplier.submit;
-import static software.amazon.glue.s3a.impl.CallableSupplier.waitForCompletion;
-import static software.amazon.glue.s3a.impl.InternalConstants.RENAME_PARALLEL_LIMIT;
-import static org.apache.hadoop.util.Preconditions.checkArgument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * A parallelized rename operation.
- * <p>
+ * A parallelized rename operation which updates the metastore in the
+ * process, through whichever {@link RenameTracker} the store provides.
+ * <p></p>
  * The parallel execution is in groups of size
  * {@link InternalConstants#RENAME_PARALLEL_LIMIT}; it is only
  * after one group completes that the next group is initiated.
- * <p>
+ * <p></p>
  * Once enough files have been copied that they meet the
  * {@link InternalConstants#MAX_ENTRIES_TO_DELETE} threshold, a delete
  * is initiated.
  * If it succeeds, the rename continues with the next group of files.
- * <p>
+ * <p></p>
+ * The RenameTracker has the task of keeping the metastore up to date
+ * as the rename proceeds.
+ * <p></p>
  * Directory Markers which have child entries are never copied; only those
  * which represent empty directories are copied in the rename.
  * The {@link DirMarkerTracker} tracks which markers must be copied, and
@@ -69,10 +74,10 @@ import static org.apache.hadoop.util.Preconditions.checkArgument;
  * the copied tree. This is to ensure that even if a directory tree
  * is copied from an authoritative path to a non-authoritative one
  * there is never any contamination of the non-auth path with markers.
- * <p>
+ * <p></p>
  * The rename operation implements the classic HDFS rename policy of
  * rename(file, dir) renames the file under the directory.
- * <p>
+ * <p></p>
  *
  * There is <i>no</i> validation of input and output paths.
  * Callers are required to themselves verify that destination is not under
@@ -112,6 +117,11 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
   private final int pageSize;
 
   /**
+   * Rename tracker.
+   */
+  private RenameTracker renameTracker;
+
+  /**
    * List of active copies.
    */
   private final List<CompletableFuture<Path>> activeCopies =
@@ -120,21 +130,20 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
   /**
    * list of keys to delete on the next (bulk) delete call.
    */
-  private final List<ObjectIdentifier> keysToDelete =
+  private final List<DeleteObjectsRequest.KeyVersion> keysToDelete =
       new ArrayList<>();
 
   /**
-   * Do directory operations purge pending uploads?
+   * List of paths to delete, which will be passed to the rename
+   * tracker after the deletion succeeds.
    */
-  private final boolean dirOperationsPurgeUploads;
+  private final List<Path> pathsToDelete = new ArrayList<>();
 
-  /**
-   * Count of uploads aborted.
-   */
-  private Optional<Long> uploadsAborted = Optional.empty();
+  private final long blocksize;
 
   /**
    * Initiate the rename.
+   *
    * @param storeContext store context
    * @param sourcePath source path
    * @param sourceKey key of source
@@ -144,7 +153,6 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
    * @param destStatus destination status.
    * @param callbacks callback provider
    * @param pageSize size of delete requests
-   * @param dirOperationsPurgeUploads Do directory operations purge pending uploads?
    */
   public RenameOperation(
       final StoreContext storeContext,
@@ -155,8 +163,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
       final String destKey,
       final S3AFileStatus destStatus,
       final OperationCallbacks callbacks,
-      final int pageSize,
-      final boolean dirOperationsPurgeUploads) {
+      final int pageSize) {
     super(storeContext);
     this.sourcePath = sourcePath;
     this.sourceKey = sourceKey;
@@ -165,20 +172,9 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     this.destKey = destKey;
     this.destStatus = destStatus;
     this.callbacks = callbacks;
-    checkArgument(pageSize > 0
-                    && pageSize <= InternalConstants.MAX_ENTRIES_TO_DELETE,
-            "page size out of range: %s", pageSize);
+    blocksize = storeContext.getConfiguration()
+        .getLongBytes(FS_S3A_BLOCK_SIZE, DEFAULT_BLOCKSIZE);
     this.pageSize = pageSize;
-    this.dirOperationsPurgeUploads = dirOperationsPurgeUploads;
-  }
-
-  /**
-   * Get the count of uploads aborted.
-   * Non-empty iff enabled, and the operations completed without errors.
-   * @return count of aborted uploads.
-   */
-  public Optional<Long> getUploadsAborted() {
-    return uploadsAborted;
   }
 
   /**
@@ -197,7 +193,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
 
   /**
    * Queue an object for deletion.
-   * <p>
+   * <p></p>
    * This object will be deleted when the next page of objects to delete
    * is posted to S3. Therefore, the COPY must have finished
    * before that deletion operation takes place.
@@ -211,6 +207,13 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
    *     Only queuing objects here whose copy operation has
    *     been submitted and so is in that thread pool.
    *   </li>
+   *   <li>
+   *     If a path is supplied, then after the delete is executed
+   *     (and completes) the rename tracker from S3Guard will be
+   *     told of its deletion. Do not set this for directory
+   *     markers with children, as it may mistakenly add
+   *     tombstones into the table.
+   *   </li>
    * </ol>
    * This method must only be called from the primary thread.
    * @param path path to the object.
@@ -218,14 +221,17 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
    */
   private void queueToDelete(Path path, String key) {
     LOG.debug("Queueing to delete {}", path);
-    keysToDelete.add(ObjectIdentifier.builder().key(key).build());
+    if (path != null) {
+      pathsToDelete.add(path);
+    }
+    keysToDelete.add(new DeleteObjectsRequest.KeyVersion(key));
   }
 
   /**
    * Queue a list of markers for deletion.
-   * <p>
+   * <p></p>
    * no-op if the list is empty.
-   * <p>
+   * <p></p>
    * See {@link #queueToDelete(Path, String)} for
    * details on safe use of this method.
    *
@@ -240,7 +246,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
 
   /**
    * Queue a single marker for deletion.
-   * <p>
+   * <p></p>
    * See {@link #queueToDelete(Path, String)} for
    * details on safe use of this method.
    *
@@ -261,15 +267,28 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
       throws IOException {
     completeActiveCopies(reason);
     removeSourceObjects(
-        keysToDelete
-    );
+        keysToDelete,
+        pathsToDelete);
     // now reset the lists.
     keysToDelete.clear();
+    pathsToDelete.clear();
   }
 
   @Retries.RetryMixed
   public Long execute() throws IOException {
     executeOnlyOnce();
+    final StoreContext storeContext = getStoreContext();
+    final MetadataStore metadataStore = checkNotNull(
+        storeContext.getMetadataStore(),
+        "No metadata store in context");
+
+    // Validation completed: time to begin the operation.
+    // The store-specific rename tracker is used to keep the store
+    // to date with the in-progress operation.
+    // for the null store, these are all no-ops.
+    renameTracker = metadataStore.initiateRenameOperation(
+        storeContext,
+        sourcePath, sourceStatus, destPath);
 
     // The path to whichever file or directory is created by the
     // rename. When deleting markers all parents of
@@ -287,18 +306,27 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
       } else {
         recursiveDirectoryRename();
       }
-    } catch (SdkException | IOException ex) {
+    } catch (AmazonClientException | IOException ex) {
       // rename failed.
       // block for all ongoing copies to complete, successfully or not
       try {
         completeActiveCopies("failure handling");
       } catch (IOException e) {
+        // a failure to update the metastore after a rename failure is what
+        // we'd see on a network problem, expired credentials and other
+        // unrecoverable errors.
         // Downgrading to warn because an exception is already
         // about to be thrown.
         LOG.warn("While completing all active copies", e);
       }
-      throw convertToIOException(ex);
+      // notify the rename tracker of the failure
+      throw renameTracker.renameFailed(ex);
     }
+
+    // At this point the rename has completed successfully in the S3 store.
+    // Tell the metastore this fact and let it complete its changes
+    renameTracker.completeRename();
+
     callbacks.finishRename(sourcePath, destCreated);
     return bytesCopied.get();
   }
@@ -329,15 +357,19 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     // destination either does not exist or is a file to overwrite.
     LOG.debug("rename: renaming file {} to {}", sourcePath,
         copyDestinationPath);
-    copySource(
+    copySourceAndUpdateTracker(
+        sourcePath,
         sourceKey,
         sourceAttributes,
         readContext,
         copyDestinationPath,
-        copyDestinationKey);
+        copyDestinationKey,
+        false);
     bytesCopied.addAndGet(sourceStatus.getLen());
     // delete the source
-    callbacks.deleteObjectAtPath(sourcePath, sourceKey, true);
+    callbacks.deleteObjectAtPath(sourcePath, sourceKey, true, null);
+    // and update the tracker
+    renameTracker.sourceObjectsDeleted(Lists.newArrayList(sourcePath));
     return copyDestinationPath;
   }
 
@@ -361,26 +393,19 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
       throw new RenameFailedException(srcKey, dstKey,
           "cannot rename a directory to a subdirectory of itself ");
     }
-    // start the async dir cleanup
-    final CompletableFuture<Long> abortUploads;
-    if (dirOperationsPurgeUploads) {
-      final String key = srcKey;
-      LOG.debug("All uploads under {} will be deleted", key);
-      abortUploads = submit(getStoreContext().getExecutor(), () ->
-          callbacks.abortMultipartUploadsUnderPrefix(key));
-    } else {
-      abortUploads = null;
-    }
 
     if (destStatus != null
         && destStatus.isEmptyDirectory() == Tristate.TRUE) {
       // delete unnecessary fake directory at the destination.
-
+      // this MUST be done before anything else so that
+      // rollback code doesn't get confused and insert a tombstone
+      // marker.
       LOG.debug("Deleting fake directory marker at destination {}",
           destStatus.getPath());
       // Although the dir marker policy doesn't always need to do this,
       // it's simplest just to be consistent here.
-      callbacks.deleteObjectAtPath(destStatus.getPath(), dstKey, false);
+      // note: updates the metastore as well a S3.
+      callbacks.deleteObjectAtPath(destStatus.getPath(), dstKey, false, null);
     }
 
     Path parentPath = storeContext.keyToPath(srcKey);
@@ -393,6 +418,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     final RemoteIterator<S3ALocatedFileStatus> iterator =
         callbacks.listFilesAndDirectoryMarkers(parentPath,
             sourceStatus,
+            true,
             true);
     while (iterator.hasNext()) {
       // get the next entry in the listing.
@@ -433,7 +459,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
         queueToDelete(childSourcePath, key);
           // now begin the single copy
         CompletableFuture<Path> copy = initiateCopy(child, key,
-            newDestKey, childDestPath);
+            childSourcePath, newDestKey, childDestPath);
         activeCopies.add(copy);
         bytesCopied.addAndGet(sourceStatus.getLen());
       }
@@ -452,13 +478,14 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     // have been deleted.
     completeActiveCopiesAndDeleteSources("final copy and delete");
 
-    // and if uploads were being aborted, wait for that to finish
-    uploadsAborted = waitForCompletionIgnoringExceptions(abortUploads);
+    // We moved all the children, now move the top-level dir
+    // Empty directory should have been added as the object summary
+    renameTracker.moveSourceDirectory();
   }
 
   /**
    * Operations to perform at the end of every loop iteration.
-   * <p>
+   * <p></p>
    * This may block the thread waiting for copies to complete
    * and/or delete a page of data.
    */
@@ -479,11 +506,12 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
   /**
    * Process all directory markers at the end of the rename.
    * All leaf markers are queued to be copied in the store;
-   * <p>
+   * this updates the metastore tracker as it does so.
+   * <p></p>
    * Why not simply create new markers? All the metadata
    * gets copied too, so if there was anything relevant then
    * it would be preserved.
-   * <p>
+   * <p></p>
    * At the same time: markers aren't valued much and may
    * be deleted without any safety checks -so if there was relevant
    * data it is at risk of destruction at any point.
@@ -492,7 +520,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
    * Be advised though: the costs of the copy not withstanding,
    * it is a lot easier to have one single type of scheduled copy operation
    * than have copy and touch calls being scheduled.
-   * <p>
+   * <p></p>
    * The duration returned is the time to initiate all copy/delete operations,
    * including any blocking waits for active copies and paged deletes
    * to execute. There may still be outstanding operations
@@ -520,6 +548,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
         "copying %d leaf markers with %d surplus not copied",
         leafMarkers.size(), surplus.size());
     for (DirMarkerTracker.Marker entry: leafMarkers.values()) {
+      Path source = entry.getPath();
       String key = entry.getKey();
       String newDestKey =
           dstKey + key.substring(srcKey.length());
@@ -530,6 +559,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
           initiateCopy(
               entry.getStatus(),
               key,
+              source,
               newDestKey,
               childDestPath));
       queueToDelete(entry);
@@ -544,6 +574,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
    * Initiate a copy operation in the executor.
    * @param source status of the source object.
    * @param key source key
+   * @param childSourcePath source as a path.
    * @param newDestKey destination key
    * @param childDestPath destination path.
    * @return the future.
@@ -551,6 +582,7 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
   protected CompletableFuture<Path> initiateCopy(
       final S3ALocatedFileStatus source,
       final String key,
+      final Path childSourcePath,
       final String newDestKey,
       final Path childDestPath) {
     S3ObjectAttributes sourceAttributes =
@@ -562,67 +594,113 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     // queue the copy operation for execution in the thread pool
     return submit(getStoreContext().getExecutor(),
         callableWithinAuditSpan(getAuditSpan(), () ->
-            copySource(
+            copySourceAndUpdateTracker(
+                childSourcePath,
                 key,
                 sourceAttributes,
                 callbacks.createReadContext(source),
                 childDestPath,
-                newDestKey)));
+                newDestKey,
+                true)));
   }
 
   /**
-   * This is invoked to copy a file or directory marker.
+   * This invoked to copy a file or directory marker then update the
+   * rename operation on success.
    * It may be called in its own thread.
+   * @param sourceFile source path of the copy; may have a trailing / on it.
    * @param srcKey source key
    * @param srcAttributes status of the source object
    * @param destination destination as a qualified path.
    * @param destinationKey destination key
+   * @param addAncestors should ancestors be added to the metastore?
    * @return the destination path.
    * @throws IOException failure
    */
   @Retries.RetryTranslated
-  private Path copySource(
+  private Path copySourceAndUpdateTracker(
+      final Path sourceFile,
       final String srcKey,
       final S3ObjectAttributes srcAttributes,
       final S3AReadOpContext readContext,
       final Path destination,
-      final String destinationKey) throws IOException {
+      final String destinationKey,
+      final boolean addAncestors) throws IOException {
     long len = srcAttributes.getLen();
+    CopyResult copyResult;
     try (DurationInfo ignored = new DurationInfo(LOG, false,
         "Copy file from %s to %s (length=%d)", srcKey, destinationKey, len)) {
-      callbacks.copyFile(srcKey, destinationKey,
+      copyResult = callbacks.copyFile(srcKey, destinationKey,
           srcAttributes, readContext);
+    }
+    if (objectRepresentsDirectory(srcKey)) {
+      renameTracker.directoryMarkerCopied(
+          sourceFile,
+          destination,
+          addAncestors);
+    } else {
+      S3ObjectAttributes destAttributes = new S3ObjectAttributes(
+          destination,
+          copyResult,
+          srcAttributes.getServerSideEncryptionAlgorithm(),
+          srcAttributes.getServerSideEncryptionKey(),
+          len);
+      renameTracker.fileCopied(
+          sourceFile,
+          srcAttributes,
+          destAttributes,
+          destination,
+          blocksize,
+          addAncestors);
     }
     return destination;
   }
 
   /**
-   * Remove source objects.
+   * Remove source objects and update the metastore by way of
+   * the rename tracker.
    * @param keys list of keys to delete
+   * @param paths list of paths matching the keys to delete 1:1.
    * @throws IOException failure
    */
   @Retries.RetryTranslated
   private void removeSourceObjects(
-      final List<ObjectIdentifier> keys)
+      final List<DeleteObjectsRequest.KeyVersion> keys,
+      final List<Path> paths)
       throws IOException {
-    // remove the keys
+    List<Path> undeletedObjects = new ArrayList<>();
+    try {
+      // remove the keys
 
-    // list what is being deleted for the interest of anyone
-    // who is trying to debug why objects are no longer there.
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Initiating delete operation for {} objects", keys.size());
-      for (ObjectIdentifier objectIdentifier : keys) {
-        LOG.debug(" {} {}", objectIdentifier.key(),
-            objectIdentifier.versionId() != null ? objectIdentifier.versionId() : "");
+      // list what is being deleted for the interest of anyone
+      // who is trying to debug why objects are no longer there.
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Initiating delete operation for {} objects", keys.size());
+        for (DeleteObjectsRequest.KeyVersion key : keys) {
+          LOG.debug(" {} {}", key.getKey(),
+              key.getVersion() != null ? key.getVersion() : "");
+        }
       }
+      // this will update the metastore on a failure, but on
+      // a successful operation leaves the store as is.
+      callbacks.removeKeys(
+          keys,
+          false,
+          undeletedObjects,
+          renameTracker.getOperationState(),
+          true);
+      // and clear the list.
+    } catch (AmazonClientException | IOException e) {
+      // Failed.
+      // Notify the rename tracker.
+      // removeKeys will have already purged the metastore of
+      // all keys it has known to delete; this is just a final
+      // bit of housekeeping and a chance to tune exception
+      // reporting.
+      // The returned IOE is rethrown.
+      throw renameTracker.deleteFailed(e, paths, undeletedObjects);
     }
-
-    Invoker.once("rename " + sourcePath + " to " + destPath,
-        sourcePath.toString(), () ->
-            callbacks.removeKeys(
-                keys,
-                false
-            ));
+    renameTracker.sourceObjectsDeleted(paths);
   }
 
   /**
@@ -641,22 +719,4 @@ public class RenameOperation extends ExecutingStoreOperation<Long> {
     }
   }
 
-  /**
-   * Convert a passed in exception (expected to be an IOE or AWS exception)
-   * into an IOException.
-   * @param ex exception caught
-   * @return the exception to throw in the failure handler.
-   */
-  protected IOException convertToIOException(final Exception ex) {
-    if (ex instanceof IOException) {
-      return (IOException) ex;
-    } else if (ex instanceof SdkException) {
-      return translateException("rename " + sourcePath + " to " + destPath,
-          sourcePath.toString(),
-          (SdkException) ex);
-    } else {
-      // should never happen, but for completeness
-      return new IOException(ex);
-    }
-  }
 }

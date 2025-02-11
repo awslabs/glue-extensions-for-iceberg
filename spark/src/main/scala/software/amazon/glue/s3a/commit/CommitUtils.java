@@ -15,18 +15,16 @@
 
 package software.amazon.glue.s3a.commit;
 
+import static software.amazon.glue.s3a.commit.InternalCommitterConstants.*;
+import static software.amazon.glue.s3a.commit.ValidationFailure.verify;
+
 import java.io.IOException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
-
-import static software.amazon.glue.s3a.commit.InternalCommitterConstants.*;
-import static software.amazon.glue.s3a.commit.ValidationFailure.verify;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Static utility methods related to S3A commitment processing, both

@@ -15,20 +15,17 @@
 
 package software.amazon.glue.s3a.auth;
 
-import javax.annotation.Nullable;
+import com.amazonaws.auth.AWSCredentialsProvider;
 import java.net.URI;
-
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-
+import javax.annotation.Nullable;
 import org.apache.hadoop.conf.Configuration;
 
 /**
  * Base class for AWS credential providers which
  * take a URI and config in their constructor.
- *
  */
 public abstract class AbstractAWSCredentialProvider
-    implements AwsCredentialsProvider {
+    implements AWSCredentialsProvider {
 
   private final URI binding;
 
@@ -59,4 +56,10 @@ public abstract class AbstractAWSCredentialProvider
     return binding;
   }
 
+  /**
+   * Refresh is a no-op by default.
+   */
+  @Override
+  public void refresh() {
+  }
 }

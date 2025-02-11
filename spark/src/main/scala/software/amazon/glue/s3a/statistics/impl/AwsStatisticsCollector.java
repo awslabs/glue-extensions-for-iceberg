@@ -15,19 +15,22 @@
 
 package software.amazon.glue.s3a.statistics.impl;
 
+import static com.amazonaws.util.AWSRequestMetrics.Field.ClientExecuteTime;
+import static com.amazonaws.util.AWSRequestMetrics.Field.HttpClientRetryCount;
+import static com.amazonaws.util.AWSRequestMetrics.Field.HttpRequestTime;
+import static com.amazonaws.util.AWSRequestMetrics.Field.RequestCount;
+import static com.amazonaws.util.AWSRequestMetrics.Field.RequestMarshallTime;
+import static com.amazonaws.util.AWSRequestMetrics.Field.RequestSigningTime;
+import static com.amazonaws.util.AWSRequestMetrics.Field.ResponseProcessingTime;
+import static com.amazonaws.util.AWSRequestMetrics.Field.ThrottleException;
+
+import com.amazonaws.Request;
+import com.amazonaws.Response;
+import com.amazonaws.metrics.RequestMetricCollector;
+import com.amazonaws.util.TimingInfo;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import software.amazon.awssdk.core.metrics.CoreMetric;
-import software.amazon.awssdk.http.HttpMetric;
-import software.amazon.awssdk.http.HttpStatusCode;
-import software.amazon.awssdk.metrics.MetricCollection;
-import software.amazon.awssdk.metrics.MetricPublisher;
-import software.amazon.awssdk.metrics.SdkMetric;
-
 import software.amazon.glue.s3a.statistics.StatisticsFromAwsSdk;
 
 /**
@@ -37,9 +40,9 @@ import software.amazon.glue.s3a.statistics.StatisticsFromAwsSdk;
  * See {@code com.facebook.presto.hive.s3.PrestoS3FileSystemMetricCollector}
  * for the inspiration for this.
  * <p>
- * See {@code software.amazon.awssdk.core.metrics.CoreMetric} for metric names.
+ * See {@code com.amazonaws.util.AWSRequestMetrics} for metric names.
  */
-public class AwsStatisticsCollector implements MetricPublisher {
+public class AwsStatisticsCollector extends RequestMetricCollector {
 
   /**
    * final destination of updates.
@@ -57,122 +60,65 @@ public class AwsStatisticsCollector implements MetricPublisher {
   /**
    * This is the callback from the AWS SDK where metrics
    * can be collected.
-   * @param metricCollection metrics collection
+   * @param request AWS request
+   * @param response AWS response
    */
   @Override
-  public void publish(MetricCollection metricCollection) {
-    // MetricCollections are nested, so we need to traverse through their
-    // "children" to collect the desired metrics. E.g.:
-    //
-    // ApiCall
-    // ┌─────────────────────────────────────────┐
-    // │ MarshallingDuration=PT0.002808333S      │
-    // │ RetryCount=0                            │
-    // │ ApiCallSuccessful=true                  │
-    // │ OperationName=DeleteObject              │
-    // │ ApiCallDuration=PT0.079801458S          │
-    // │ CredentialsFetchDuration=PT0.000007083S │
-    // │ ServiceId=S3                            │
-    // └─────────────────────────────────────────┘
-    //     ApiCallAttempt
-    //     ┌─────────────────────────────────────────────────────────────────┐
-    //     │ SigningDuration=PT0.000319375S                                  │
-    //     │ ServiceCallDuration=PT0.078908584S                              │
-    //     │ AwsExtendedRequestId=Kmvb2Sz8NuDgIFJPKzLLBhuHgQGmpAjVYBMrSHDvy= │
-    //     │ HttpStatusCode=204                                              │
-    //     │ BackoffDelayDuration=PT0S                                       │
-    //     │ AwsRequestId=KR0XZCSX                                           │
-    //     └─────────────────────────────────────────────────────────────────┘
-    //         HttpClient
-    //         ┌─────────────────────────────────┐
-    //         │ AvailableConcurrency=1          │
-    //         │ LeasedConcurrency=0             │
-    //         │ ConcurrencyAcquireDuration=PT0S │
-    //         │ PendingConcurrencyAcquires=0    │
-    //         │ MaxConcurrency=96               │
-    //         │ HttpClientName=Apache           │
-    //         └─────────────────────────────────┘
+  public void collectMetrics(
+      final Request<?> request,
+      final Response<?> response) {
 
-    final long[] throttling = {0};
-    recurseThroughChildren(metricCollection)
-        .collect(Collectors.toList())
-        .forEach(m -> {
-          counter(m, CoreMetric.RETRY_COUNT, retries -> {
-            collector.updateAwsRetryCount(retries);
-            collector.updateAwsRequestCount(retries + 1);
-          });
+    TimingInfo timingInfo = request.getAWSRequestMetrics().getTimingInfo();
 
-          counter(m, HttpMetric.HTTP_STATUS_CODE, statusCode -> {
-            if (statusCode == HttpStatusCode.THROTTLING) {
-              throttling[0] += 1;
-            }
-          });
+    counter(timingInfo, HttpClientRetryCount.name(),
+        collector::updateAwsRetryCount);
+    counter(timingInfo, RequestCount.name(),
+        collector::updateAwsRequestCount);
+    counter(timingInfo, ThrottleException.name(),
+        collector::updateAwsThrottleExceptionsCount);
 
-          timing(m, CoreMetric.API_CALL_DURATION,
-              collector::noteAwsClientExecuteTime);
-
-          timing(m, CoreMetric.SERVICE_CALL_DURATION,
-              collector::noteAwsRequestTime);
-
-          timing(m, CoreMetric.MARSHALLING_DURATION,
-              collector::noteRequestMarshallTime);
-
-          timing(m, CoreMetric.SIGNING_DURATION,
-              collector::noteRequestSigningTime);
-
-          timing(m, CoreMetric.UNMARSHALLING_DURATION,
-              collector::noteResponseProcessingTime);
-        });
-
-    collector.updateAwsThrottleExceptionsCount(throttling[0]);
-  }
-
-  @Override
-  public void close() {
-
+    timing(timingInfo, ClientExecuteTime.name(),
+        collector::noteAwsClientExecuteTime);
+    timing(timingInfo, HttpRequestTime.name(),
+        collector::noteAwsRequestTime);
+    timing(timingInfo, RequestMarshallTime.name(),
+        collector::noteRequestMarshallTime);
+    timing(timingInfo, RequestSigningTime.name(),
+        collector::noteRequestSigningTime);
+    timing(timingInfo, ResponseProcessingTime.name(),
+        collector::noteResponseProcessingTime);
   }
 
   /**
    * Process a timing.
-   * @param collection metric collection
-   * @param metric metric
+   * @param timingInfo timing info
+   * @param subMeasurementName sub measurement
    * @param durationConsumer consumer
    */
   private void timing(
-      MetricCollection collection,
-      SdkMetric<Duration> metric,
+      TimingInfo timingInfo,
+      String subMeasurementName,
       Consumer<Duration> durationConsumer) {
-    collection
-        .metricValues(metric)
-        .forEach(v -> durationConsumer.accept(v));
+    TimingInfo t1 = timingInfo.getSubMeasurement(subMeasurementName);
+    if (t1 != null && t1.getTimeTakenMillisIfKnown() != null) {
+      durationConsumer.accept(Duration.ofMillis(
+          t1.getTimeTakenMillisIfKnown().longValue()));
+    }
   }
 
   /**
    * Process a counter.
-   * @param collection metric collection
-   * @param metric metric
+   * @param timingInfo timing info
+   * @param subMeasurementName sub measurement
    * @param consumer consumer
    */
   private void counter(
-      MetricCollection collection,
-      SdkMetric<Integer> metric,
+      TimingInfo timingInfo,
+      String subMeasurementName,
       LongConsumer consumer) {
-    collection
-        .metricValues(metric)
-        .forEach(v -> consumer.accept(v.longValue()));
-  }
-
-  /**
-   * Metric collections can be nested. Exposes a stream of the given
-   * collection and its nested children.
-   * @param metrics initial collection
-   * @return a stream of all nested metric collections
-   */
-  private static Stream<MetricCollection> recurseThroughChildren(
-      MetricCollection metrics) {
-    return Stream.concat(
-        Stream.of(metrics),
-        metrics.children().stream()
-            .flatMap(c -> recurseThroughChildren(c)));
+    Number n = timingInfo.getCounter(subMeasurementName);
+    if (n != null) {
+      consumer.accept(n.longValue());
+    }
   }
 }

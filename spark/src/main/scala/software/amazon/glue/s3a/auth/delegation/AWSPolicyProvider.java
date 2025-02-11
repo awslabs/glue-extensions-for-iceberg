@@ -17,7 +17,6 @@ package software.amazon.glue.s3a.auth.delegation;
 
 import java.util.List;
 import java.util.Set;
-
 import software.amazon.glue.s3a.auth.RoleModel;
 
 /**
@@ -28,8 +27,8 @@ import software.amazon.glue.s3a.auth.RoleModel;
  * The permissions requested are from the perspective of
  * S3A filesystem operations on the data, <i>not</i> the simpler
  * model of "permissions on the the remote service".
- * As an example, AWS-KMS encryption permissions must
- * also be requested.
+ * As an example, to use S3Guard effectively, the client needs full CRUD
+ * access to the table, even for {@link AccessLevel#READ}.
  */
 public interface AWSPolicyProvider {
 

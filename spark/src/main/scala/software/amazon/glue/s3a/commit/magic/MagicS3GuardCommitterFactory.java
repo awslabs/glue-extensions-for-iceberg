@@ -16,7 +16,6 @@
 package software.amazon.glue.s3a.commit.magic;
 
 import java.io.IOException;
-
 import org.apache.hadoop.fs.Path;
 import software.amazon.glue.s3a.S3AFileSystem;
 import software.amazon.glue.s3a.commit.AbstractS3ACommitterFactory;
@@ -33,7 +32,7 @@ public class MagicS3GuardCommitterFactory
    * Name of this class: {@value}.
    */
   public static final String CLASSNAME
-      = "org.apache.hadoop.fs.s3a.commit.magic.MagicS3GuardCommitterFactory";
+      = "software.amazon.glue.s3a.commit.magic.MagicS3GuardCommitterFactory";
 
   public PathOutputCommitter createTaskCommitter(S3AFileSystem fileSystem,
       Path outputPath,

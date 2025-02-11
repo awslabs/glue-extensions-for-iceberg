@@ -15,23 +15,21 @@
 
 package software.amazon.glue.s3a.auth.delegation;
 
+import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.FULL_TOKEN_KIND;
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.Optional;
-
-import org.apache.hadoop.util.Preconditions;
-
 import org.apache.hadoop.conf.Configuration;
 import software.amazon.glue.s3a.AWSCredentialProviderList;
 import software.amazon.glue.s3a.S3AUtils;
-import software.amazon.glue.s3a.S3xLoginHelper;
 import software.amazon.glue.s3a.auth.MarshalledCredentialBinding;
 import software.amazon.glue.s3a.auth.MarshalledCredentialProvider;
 import software.amazon.glue.s3a.auth.MarshalledCredentials;
 import software.amazon.glue.s3a.auth.RoleModel;
+import software.amazon.glue.s3native.S3xLoginHelper;
 import org.apache.hadoop.io.Text;
-
-import static software.amazon.glue.s3a.auth.delegation.DelegationConstants.FULL_TOKEN_KIND;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 
 /**
  * Full credentials: they are simply passed as-is, rather than

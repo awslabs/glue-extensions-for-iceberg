@@ -15,10 +15,9 @@
 
 package software.amazon.glue.s3a.audit.impl;
 
-import software.amazon.awssdk.core.interceptor.ExecutionAttribute;
-
+import com.amazonaws.handlers.HandlerContextKey;
 import org.apache.hadoop.classification.InterfaceAudience;
-import software.amazon.glue.s3a.audit.AuditSpanS3A;
+import software.amazon.glue.s3a.audit.AWSAuditEventCallbacks;
 
 /**
  * Internal constants; not intended for public use, or
@@ -31,11 +30,11 @@ public final class S3AInternalAuditConstants {
   }
 
   /**
-   * Exceution attribute for audit span callbacks.
-   * This is used to retrieve the span in the AWS code.
+   * Handler key for audit span callbacks.
+   * This is used to bind the handler in the AWS code.
    */
-  public static final ExecutionAttribute<AuditSpanS3A>
-      AUDIT_SPAN_EXECUTION_ATTRIBUTE =
-      new ExecutionAttribute<>(
-          "org.apache.hadoop.fs.s3a.audit.AuditSpanS3A");
+  public static final HandlerContextKey<AWSAuditEventCallbacks>
+      AUDIT_SPAN_HANDLER_CONTEXT =
+      new HandlerContextKey<>(
+          "software.amazon.glue.s3a.audit.AWSAuditEventCallbacks");
 }

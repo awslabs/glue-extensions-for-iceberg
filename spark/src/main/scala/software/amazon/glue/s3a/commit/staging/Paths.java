@@ -15,18 +15,14 @@
 
 package software.amazon.glue.s3a.commit.staging;
 
+import static software.amazon.glue.s3a.commit.CommitConstants.*;
+import static software.amazon.glue.s3a.commit.InternalCommitterConstants.JAVA_IO_TMPDIR;
+import static software.amazon.glue.s3a.commit.staging.StagingCommitterConstants.*;
+
 import java.io.IOException;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.util.Preconditions;
-import org.apache.hadoop.thirdparty.com.google.common.cache.Cache;
-import org.apache.hadoop.thirdparty.com.google.common.cache.CacheBuilder;
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.UncheckedExecutionException;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -38,10 +34,12 @@ import software.amazon.glue.s3a.Constants;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.security.UserGroupInformation;
-
-import static software.amazon.glue.s3a.commit.CommitConstants.*;
-import static software.amazon.glue.s3a.commit.InternalCommitterConstants.JAVA_IO_TMPDIR;
-import static software.amazon.glue.s3a.commit.staging.StagingCommitterConstants.*;
+import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
+import org.apache.hadoop.thirdparty.com.google.common.cache.Cache;
+import org.apache.hadoop.thirdparty.com.google.common.cache.CacheBuilder;
+import org.apache.hadoop.thirdparty.com.google.common.collect.Sets;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * Path operations for the staging committers.
@@ -225,19 +223,6 @@ public final class Paths {
   }
 
   /**
-   * Build a qualified parent path for the temporary multipart upload commit
-   * directory built by {@link #getMultipartUploadCommitsDirectory(Configuration, String)}.
-   * @param conf configuration defining default FS.
-   * @param uuid uuid of job
-   * @return a path which can be used for temporary work
-   * @throws IOException on an IO failure.
-   */
-  public static Path getStagingUploadsParentDirectory(Configuration conf,
-      String uuid) throws IOException {
-    return getMultipartUploadCommitsDirectory(conf, uuid).getParent();
-  }
-
-  /**
    * Build a qualified temporary path for the multipart upload commit
    * information in the cluster filesystem.
    * Path is built by
@@ -300,7 +285,7 @@ public final class Paths {
       List<? extends FileStatus> taskOutput)
       throws IOException {
     // get a list of partition directories
-    Set<String> partitions = new LinkedHashSet<>();
+    Set<String> partitions = Sets.newLinkedHashSet();
     for (FileStatus fileStatus : taskOutput) {
       // sanity check the output paths
       Path outputFile = fileStatus.getPath();

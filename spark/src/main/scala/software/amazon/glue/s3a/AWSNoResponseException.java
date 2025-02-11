@@ -15,19 +15,14 @@
 
 package software.amazon.glue.s3a;
 
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import com.amazonaws.AmazonServiceException;
 
 /**
  * Status code 443, no response from server. This is considered idempotent.
  */
 public class AWSNoResponseException extends AWSServiceIOException {
   public AWSNoResponseException(String operation,
-      AwsServiceException cause) {
+      AmazonServiceException cause) {
     super(operation, cause);
-  }
-
-  @Override
-  public boolean retryable() {
-    return true;
   }
 }

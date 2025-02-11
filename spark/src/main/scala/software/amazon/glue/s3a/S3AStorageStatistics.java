@@ -15,12 +15,12 @@
 
 package software.amazon.glue.s3a;
 
+import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.emptyStatistics;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.fs.statistics.impl.StorageStatisticsFromIOStatistics;
-
-import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.emptyStatistics;
 
 /**
  * Storage statistics for S3A, dynamically generated from the IOStatistics.

@@ -1,15 +1,15 @@
 /*
- * Copyright amazon.com, Inc. Or Its AFFILIATES. all rights reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
- * licensed under the apache License, version 2.0 (the "license").
- * you may not use this file except in Compliance WITH the license.
- * a copy of the license Is Located At
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
  *
- *  http://aws.amazon.Com/apache2.0
+ *  http://aws.amazon.com/apache2.0
  *
- * or in the "license" file accompanying this file. this File Is distributed
- * on an "as is" basis, Without warranties or conditions of any kind, EITHER
- * express or Implied. see the license for the specific language governing
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
 
@@ -18,13 +18,10 @@ package software.amazon.glue.s3a;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.DelegateToFileSystem;
-
-import static software.amazon.glue.s3a.Constants.FS_S3A;
 
 /**
  * S3A implementation of AbstractFileSystem.
@@ -32,12 +29,11 @@ import static software.amazon.glue.s3a.Constants.FS_S3A;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class S3A extends DelegateToFileSystem {
+public class S3A extends DelegateToFileSystem{
 
   public S3A(URI theUri, Configuration conf)
-      throws IOException, URISyntaxException {
-    super(theUri, new S3AFileSystem(), conf,
-        theUri.getScheme().isEmpty() ? FS_S3A : theUri.getScheme(), false);
+          throws IOException, URISyntaxException {
+    super(theUri, new S3AFileSystem(), conf, "s3a", false);
   }
 
   @Override
@@ -53,14 +49,5 @@ public class S3A extends DelegateToFileSystem {
     sb.append("; fsImpl=").append(fsImpl);
     sb.append('}');
     return sb.toString();
-  }
-
-  /**
-   * Close the file system; the FileContext API doesn't have an explicit close.
-   */
-  @Override
-  protected void finalize() throws Throwable {
-    fsImpl.close();
-    super.finalize();
   }
 }
