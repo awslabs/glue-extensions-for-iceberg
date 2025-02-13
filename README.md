@@ -41,7 +41,7 @@ spark-sql \
 
 ```shell
 spark-sql \
- --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0 \
+ --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0 \
  --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog \
  --conf spark.sql.catalog.my_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog \
  --conf spark.sql.catalog.my_catalog.glue.id=123456789012:rmscatalog/rmsdatabase \
@@ -49,10 +49,15 @@ spark-sql \
  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,software.amazon.glue.GlueIcebergSparkExtensions \
  --conf spark.hadoop.fs.s3a.impl=software.amazon.glue.s3a.S3AFileSystem \
  --conf spark.hadoop.fs.s3a.credentials.resolver=software.amazon.glue.GlueTableCredentialsResolver \
- --conf spark.hadoop.glue.id=123456789012:rmscatalog/rmsdatabase
+ --conf spark.hadoop.glue.id=123456789012:rmscatalog/rmsdatabase \
+ --conf spark.hadoop.fs.s3a.aws.credentials.provider= \
+ --conf spark.hadoop.fs.s3a.metadatastore.impl=software.amazon.glue.s3a.s3guard.NullMetadataStore
 ```
 
 Note: this command assumes that you have AWS SDK V1 and V2 are on your class path.
+
+`spark.hadoop.fs.s3a.aws.credentials.provider` is set to empty to disable the default credential provider chain. The extension will automatically picks the credential providers and find credentials.
+`spark.hadoop.fs.s3a.metadatastore.impl` is set to `NullMetadataStore` to not use any metadata store.
 
 ## AWS Glue Extensions API
 
@@ -73,7 +78,7 @@ If you are working on library integration with it, use:
 
 ```groovy
 dependencies {
-    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg:0.1.0"
+    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg:0.2.0"
 }
 ```
 
@@ -82,7 +87,7 @@ It provides the same class path shading as the ones used in Iceberg engine runti
 
 ```groovy
 dependencies {
-    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg-runtime:0.1.0"
+    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg-runtime:0.2.0"
 }
 ```
 
@@ -98,12 +103,12 @@ which provides the same class path shading as the ones used in Iceberg engine ru
 ```groovy
 // without shading
 dependencies {
-    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-3.5_2.12:0.1.0"
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-3.5_2.12:0.2.0"
 }
 
 // with shading
 dependencies {
-    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0"
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0"
 }
 ```
 
@@ -111,7 +116,7 @@ You can also directly use it in your Spark application using:
 
 ```shell
 spark-sql \
- --packages software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.1.0 \
+ --packages software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0 \
  --conf ...
 ```
 
