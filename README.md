@@ -41,7 +41,7 @@ spark-sql \
 
 ```shell
 spark-sql \
- --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0 \
+ --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.3.0 \
  --conf spark.sql.catalog.my_catalog=org.apache.iceberg.spark.SparkCatalog \
  --conf spark.sql.catalog.my_catalog.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog \
  --conf spark.sql.catalog.my_catalog.glue.id=123456789012:rmscatalog/rmsdatabase \
@@ -78,7 +78,7 @@ If you are working on library integration with it, use:
 
 ```groovy
 dependencies {
-    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg:0.2.0"
+    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg:0.3.0"
 }
 ```
 
@@ -87,7 +87,7 @@ It provides the same class path shading as the ones used in Iceberg engine runti
 
 ```groovy
 dependencies {
-    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg-runtime:0.2.0"
+    implementation "software.amazon.glue:glue-catalog-extensions-for-iceberg-runtime:0.3.0"
 }
 ```
 
@@ -103,12 +103,12 @@ which provides the same class path shading as the ones used in Iceberg engine ru
 ```groovy
 // without shading
 dependencies {
-    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-3.5_2.12:0.2.0"
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-3.5_2.12:0.3.0"
 }
 
 // with shading
 dependencies {
-    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0"
+    implementation "software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.3.0"
 }
 ```
 
@@ -116,7 +116,7 @@ You can also directly use it in your Spark application using:
 
 ```shell
 spark-sql \
- --packages software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.2.0 \
+ --packages software.amazon.glue:glue-extensions-for-iceberg-spark-runtime-3.5_2.12:0.3.0 \
  --conf ...
 ```
 
